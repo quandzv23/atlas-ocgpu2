@@ -1,0 +1,42 @@
+name: Build A21s Kernel
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    - name: Setup build env
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
+
+    - name: Install clang
+      run: |
+        git clone https://github.com/llvm/llvm-project --depth=1 clang
+        export PATH=$PWD/clang/bin:$PATH
+
+    - name: Set env
+      run: |
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "SUBARCH=arm64" >> $GITHUB_ENV
+
+    - name: Build kernel
+      run: |
+        make exynos_defconfig
+        make -j$(nproc)
+
+    - name: Upload Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel
+        path: |
+          arch/arm64/boot/Image.gz
+          arch/arm64/boot/dts/*.dtb
