@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Stable CI)
+name: Build A21s Kernel (Fix All Basic Errors)
 
 on:
   push:
@@ -18,11 +18,15 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
-    - name: Fix ccache (correct way)
+    - name: Fix ccache
       run: |
         mkdir -p fakebin
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
+
+    - name: Fix permissions (IMPORTANT)
+      run: |
+        chmod -R +x scripts
 
     - name: Set environment
       run: |
