@@ -1,4 +1,4 @@
-name: Build A21s Kernel (No ccache)
+name: Build A21s Kernel (Fix ccache)
 
 on:
   push:
@@ -18,16 +18,21 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
-    - name: Install clang toolchain
+    - name: Install clang
       run: |
         git clone --depth=1 https://github.com/llvm/llvm-project clang
         echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-    - name: Set environment
+    - name: Fix missing ccache (IMPORTANT)
+      run: |
+        mkdir -p fakebin
+        ln -s $(which gcc) fakebin/ccache
+        echo "$PWD/fakebin" >> $GITHUB_PATH
+
+    - name: Set env
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
-        echo "USE_CCACHE=0" >> $GITHUB_ENV
 
     - name: Build kernel
       run: |
