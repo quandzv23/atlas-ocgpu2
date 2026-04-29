@@ -1,4 +1,4 @@
-name: Build A21s Kernel
+name: Build A21s Kernel (No ccache)
 
 on:
   push:
@@ -13,30 +13,31 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v4
 
-    - name: Setup build env
+    - name: Setup build environment
       run: |
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
-    - name: Install clang
+    - name: Install clang toolchain
       run: |
-        git clone https://github.com/llvm/llvm-project --depth=1 clang
-        export PATH=$PWD/clang/bin:$PATH
+        git clone --depth=1 https://github.com/llvm/llvm-project clang
+        echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-    - name: Set env
+    - name: Set environment
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
+        echo "USE_CCACHE=0" >> $GITHUB_ENV
 
     - name: Build kernel
       run: |
         make exynos_defconfig
         make -j$(nproc)
 
-    - name: Upload Image
+    - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: kernel
+        name: A21s-Kernel
         path: |
           arch/arm64/boot/Image.gz
-          arch/arm64/boot/dts/*.dtb
+          arch/arm64/boot/dts/**/*.dtb
