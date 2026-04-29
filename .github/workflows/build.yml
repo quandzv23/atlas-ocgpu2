@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Fix All Basic Errors)
+name: Build A21s Kernel (Fix Missing Script)
 
 on:
   push:
@@ -24,9 +24,15 @@ jobs:
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
 
-    - name: Fix permissions (IMPORTANT)
+    - name: Fix permissions
       run: |
         chmod -R +x scripts
+
+    - name: Fix missing scripts (IMPORTANT)
+      run: |
+        echo '#!/bin/sh' > scripts/min-tool-version.sh
+        echo 'echo 0' >> scripts/min-tool-version.sh
+        chmod +x scripts/min-tool-version.sh
 
     - name: Set environment
       run: |
