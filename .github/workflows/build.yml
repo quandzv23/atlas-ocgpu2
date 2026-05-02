@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL FIX LINKER)
+name: Build A21s Kernel (FINAL FIX REAL)
 
 on:
   push:
@@ -20,10 +20,6 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
-
-    - name: Setup ccache
-      run: |
-        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
 
     - name: Download Clang
       run: |
@@ -50,9 +46,10 @@ jobs:
         make clean || true
         make mrproper || true
 
-    # 🚀 BUILD ĐÚNG CÁCH (KHÔNG PHÁ HOST TOOLCHAIN)
+    # 🔥 BUILD CHUẨN KHÔNG ĐỤNG LINKER
     - name: Build
       run: |
+        export PATH=/usr/bin:$PATH   # ⚠️ ƯU TIÊN LD HỆ THỐNG
         export PATH=$PWD/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
@@ -61,6 +58,8 @@ jobs:
           CC=clang \
           HOSTCC=gcc \
           HOSTCXX=g++ \
+          LD=/usr/bin/ld \
+          HOSTLD=/usr/bin/ld \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
