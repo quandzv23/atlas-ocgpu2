@@ -1,98 +1,87 @@
-name: Build A21s Kernel (Stable ZIP)
+name: Build Kernel A21s
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
       ARCH: arm64
       SUBARCH: arm64
 
     steps:
-    - name: 📥 Clone kernel
-      run: |
-        git clone https://github.com/samsungexynos850/atlas kernel
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-    - name: 🧹 Free disk space
-      run: |
-        rm -rf kernel/.git
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/lib/android
+      - name: 🧰 Setup build env
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison flex libssl-dev make \
+            libc6-dev libncurses5-dev \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            python3 zip
 
-    - name: 🧰 Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git bc bison flex libssl-dev make \
-          libc6-dev libncurses5-dev \
-          gcc-aarch64-linux-gnu \
-          gcc-arm-linux-gnueabi \
-          python3 zip ccache rsync
+      - name: 📥 Clone kernel
+        run: |
+          git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: ⚡ Setup ccache
-      run: |
-        export USE_CCACHE=1
-        export CCACHE_EXEC=$(which ccache)
-        ccache -M 2G
+      - name: ⚡ Clone Clang (Proton - nhẹ)
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    - name: 🧠 Clone Clang (Proton - nhẹ)
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+      - name: 🔧 Fix Samsung source
+        run: |
+          cd kernel
 
-    - name: 🛠️ Fix source (Samsung issues)
-      run: |
-        cd kernel
-
-        # FIX thiếu script
-        cat << 'EOF' > scripts/min-tool-version.sh
+          # FIX thiếu script
+          cat << 'EOF' > scripts/min-tool-version.sh
 #!/bin/sh
 echo 0
 EOF
-        chmod +x scripts/min-tool-version.sh
+          chmod +x scripts/min-tool-version.sh
 
-        # bypass assembler check
-        sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
+          # bypass assembler check
+          sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
 
-        # repo thiếu vdso → remove
-        rm -rf arch/arm64/kernel/vdso || true
+          # remove vdso (repo lỗi thiếu file)
+          rm -rf arch/arm64/kernel/vdso || true
 
-    - name: ⚙️ Configure
-      run: |
-        cd kernel
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+      - name: ⚙️ Configure
+        run: |
+          cd kernel
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        make exynos850-a21snsxx_defconfig
-        yes "" | make olddefconfig
+          make exynos850-a21snsxx_defconfig
+          yes "" | make olddefconfig
 
-    - name: 🚀 Build
-      run: |
-        cd kernel
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+      - name: 🔥 Build kernel
+        run: |
+          cd kernel
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        make -j$(nproc) \
-          CC="ccache clang" \
-          HOSTCC="ccache gcc" \
-          HOSTCXX="ccache g++" \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          make -j$(nproc) \
+            CC=clang \
+            HOSTCC=gcc \
+            HOSTCXX=g++ \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: 📦 Pack ZIP (AnyKernel3)
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3
+      - name: 📦 Pack AnyKernel3 ZIP
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel
 
-        cp kernel/arch/arm64/boot/Image.gz AnyKernel3/ || exit 1
-        cp kernel/arch/arm64/boot/dtb.img AnyKernel3/ 2>/dev/null || true
-        cp kernel/arch/arm64/boot/dtbo.img AnyKernel3/ 2>/dev/null || true
+          cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel/ || true
+          cp kernel/arch/arm64/boot/Image.gz AnyKernel/ || true
 
-        cd AnyKernel3
-        zip -r9 A21s-Kernel.zip *
+          cd AnyKernel
+          zip -r9 kernel-a21s.zip *
 
-    - name: ⬆️ Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: A21s-Kernel
-        path: AnyKernel3/A21s-Kernel.zip
+      - name: ⬆️ Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-a21s
+          path: AnyKernel/kernel-a21s.zip
