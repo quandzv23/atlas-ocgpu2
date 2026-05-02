@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL NO VDSO CRASH)
+name: Build A21s Kernel (FINAL VDSO REAL FIX)
 
 on:
   push:
@@ -46,11 +46,12 @@ jobs:
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts
 
-    # 🔥 FIX VDSO CHUẨN
-    - name: Fake vdso
+    # 🔥 FIX VDSO CHUẨN (KHÔNG FAKE NỮA)
+    - name: Fix VDSO real
       run: |
         mkdir -p arch/arm64/kernel/vdso
-        touch arch/arm64/kernel/vdso/vdso.lds
+        curl -L https://raw.githubusercontent.com/torvalds/linux/master/arch/arm64/kernel/vdso/vdso.lds.S \
+          -o arch/arm64/kernel/vdso/vdso.lds
 
     - name: Set env
       run: |
@@ -67,7 +68,6 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 FIX interactive config
         yes "" | make olddefconfig
 
         make -j$(nproc) \
