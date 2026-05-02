@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL CLEAN REAL)
+name: Build A21s Kernel (FINAL NO VDSO CRASH)
 
 on:
   push:
@@ -12,31 +12,30 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 🔥 RESET SOURCE (CỨU MAKEFILE)
     - name: Reset source
       run: |
         git reset --hard
         git clean -fd
 
-    - name: Fix apt mirror
+    - name: Fix apt
       run: |
         sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
 
-    - name: Install dependencies
+    - name: Install deps
       run: |
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
 
-    - name: Download Clang
+    - name: Get clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    - name: Remove broken clang linker
+    - name: Fix linker
       run: |
         rm -f clang/bin/ld
         rm -f clang/bin/ld.lld
 
-    - name: Integrate KernelSU
+    - name: KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
@@ -46,6 +45,12 @@ jobs:
         echo 'echo 0' >> scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts
+
+    # 🔥 FIX VDSO CHUẨN
+    - name: Fake vdso
+      run: |
+        mkdir -p arch/arm64/kernel/vdso
+        touch arch/arm64/kernel/vdso/vdso.lds
 
     - name: Set env
       run: |
@@ -62,11 +67,8 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 TẮT VDSO ĐÚNG CÁCH
-        echo "CONFIG_VDSO=n" >> .config
-        echo "CONFIG_COMPAT_VDSO=n" >> .config
-
-        make olddefconfig
+        # 🔥 FIX interactive config
+        yes "" | make olddefconfig
 
         make -j$(nproc) \
           CC=clang \
