@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL STABLE VDSO FIX)
+name: Build A21s Kernel (FINAL ULTIMATE FIX)
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v4
 
-    # 🔥 FIX TREO APT
+    # 🔥 FIX APT (TRÁNH TREO)
     - name: Fix apt mirror
       run: |
         sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
@@ -23,12 +23,12 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
 
-    # 🔥 TẢI CLANG NHẸ + ỔN ĐỊNH
+    # 🔥 CLANG NHẸ + ỔN ĐỊNH
     - name: Download Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔥 XÓA LINKER LỖI (FIX libc relr.dyn)
+    # 🔥 FIX LINKER LỖI (.relr.dyn)
     - name: Remove broken clang linker
       run: |
         rm -f clang/bin/ld
@@ -64,12 +64,14 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 FIX VDSO (LỖI vdso.lds)
+        # 🔥 TẮT VDSO (config level)
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
-        sed -i 's/CONFIG_VDSO=y/CONFIG_VDSO=n/g' .config || true
 
         make olddefconfig
+
+        # 🔥 KILL VDSO (MAKEFILE LEVEL - QUAN TRỌNG NHẤT)
+        sed -i '/vdso/d' arch/arm64/Makefile
 
         make -j$(nproc) \
           CC=clang \
