@@ -61,6 +61,10 @@ jobs:
       - name: 🔥 Build kernel
         run: |
           cd kernel
+
+          # remove mọi chỗ gọi ccache
+          grep -rl "ccache" . | xargs sed -i 's/ccache //g' || true
+          
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           export USE_CCACHE=0
           export CCACHE_DISABLE=1
