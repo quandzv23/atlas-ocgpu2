@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL - KSU + Correct Defconfig)
+name: Build A21s Kernel (FINAL FIX ALL)
 
 on:
   push:
@@ -13,31 +13,26 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v4
 
-    - name: Setup build environment
+    - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
-    - name: Fix ccache
+    # 🔥 TẢI CLANG TOOLCHAIN
+    - name: Download Clang
       run: |
-        mkdir -p fakebin
-        ln -s /usr/bin/env fakebin/ccache
-        echo "$PWD/fakebin" >> $GITHUB_PATH
+        git clone --depth=1 https://github.com/llvm/llvm-project clang
 
-    # 🔥 CÀI KERNELSU ĐÚNG CÁCH (AUTO PATCH)
+    # 🔥 CÀI KERNELSU
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-    # 🔥 FIX SCRIPT THIẾU
-    - name: Fix missing scripts
+    - name: Fix scripts
       run: |
         echo '#!/bin/sh' > scripts/min-tool-version.sh
         echo 'echo 0' >> scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
-
-    - name: Fix permissions
-      run: |
         chmod -R +x scripts
 
     - name: Set environment
@@ -45,17 +40,28 @@ jobs:
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
 
-    # 🧼 CLEAN BUILD
     - name: Clean build
       run: |
         make clean || true
         make mrproper || true
 
-    # ✅ BUILD ĐÚNG DEFCONFIG
+    # 🚀 BUILD BẰNG CLANG (QUAN TRỌNG NHẤT)
     - name: Build kernel
       run: |
+        export PATH=$PWD/clang/bin:$PATH
+
         make exynos850-a21snsxx_defconfig
-        make -j$(nproc)
+
+        make -j$(nproc) \
+          CC=clang \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
     - name: Upload kernel
       uses: actions/upload-artifact@v4
