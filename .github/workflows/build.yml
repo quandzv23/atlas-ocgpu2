@@ -1,86 +1,74 @@
-name: Build A21s Kernel (FINAL VDSO REAL FIX)
+name: Build A21s Kernel (Exynos 850 + KSU)
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v4
+      - name: 📥 Clone Kernel Source
+        run: |
+          git clone https://github.com/samsungexynos850/atlas kernel
+          cd kernel
 
-    - name: Reset source
-      run: |
-        git reset --hard
-        git clean -fd
+      - name: 📦 Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git bc bison flex libssl-dev make \
+            libc6-dev libncurses5-dev \
+            crossbuild-essential-arm64 \
+            crossbuild-essential-armhf \
+            gcc g++ clang lld
 
-    - name: Fix apt
-      run: |
-        sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
+      - name: ⚙️ Setup Clang
+        run: |
+          cd kernel
+          git clone https://github.com/llvm/llvm-project --depth=1 clang
+          cd clang
+          git checkout llvmorg-17.0.0
+          cd ..
 
-    - name: Install deps
-      run: |
-        sudo apt update
-        sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
+      - name: 🔧 Setup KernelSU
+        run: |
+          cd kernel
+          git clone https://github.com/tiann/KernelSU
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/exynos850-a21snsxx_defconfig
 
-    - name: Get clang
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+      - name: 🛠 Build Kernel
+        run: |
+          cd kernel
 
-    - name: Fix linker
-      run: |
-        rm -f clang/bin/ld
-        rm -f clang/bin/ld.lld
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$PWD/clang/bin:/usr/bin:$PATH
 
-    - name: KernelSU
-      run: |
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          make exynos850-a21snsxx_defconfig
 
-    - name: Fix scripts
-      run: |
-        echo '#!/bin/sh' > scripts/min-tool-version.sh
-        echo 'echo 0' >> scripts/min-tool-version.sh
-        chmod +x scripts/min-tool-version.sh
-        chmod -R +x scripts
+          # ✅ FIX interactive config
+          yes "" | make olddefconfig
 
-    # 🔥 FIX VDSO CHUẨN (KHÔNG FAKE NỮA)
-    - name: Fix VDSO real
-      run: |
-        mkdir -p arch/arm64/kernel/vdso
-        curl -L https://raw.githubusercontent.com/torvalds/linux/master/arch/arm64/kernel/vdso/vdso.lds.S \
-          -o arch/arm64/kernel/vdso/vdso.lds
+          # ✅ FIX VDSO (QUAN TRỌNG NHẤT)
+          scripts/config --disable VDSO || true
+          scripts/config --disable COMPAT_VDSO || true
 
-    - name: Set env
-      run: |
-        echo "ARCH=arm64" >> $GITHUB_ENV
-        echo "SUBARCH=arm64" >> $GITHUB_ENV
+          # 👉 tạo vdso giả để tránh lỗi thiếu file
+          mkdir -p arch/arm64/kernel/vdso
+          echo "SECTIONS {}" > arch/arm64/kernel/vdso/vdso.lds
 
-    - name: Clean
-      run: |
-        make mrproper
+          # ✅ BUILD
+          make -j$(nproc) \
+            CC=clang \
+            HOSTCC=gcc \
+            HOSTCXX=g++ \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image.gz-dtb
 
-    - name: Build
-      run: |
-        export PATH=$PWD/clang/bin:$PATH
-
-        make exynos850-a21snsxx_defconfig
-
-        yes "" | make olddefconfig
-
-        make -j$(nproc) \
-          CC=clang \
-          HOSTCC=gcc \
-          HOSTCXX=g++ \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: A21s-Kernel-KSU
-        path: |
-          arch/arm64/boot/Image.gz
-          arch/arm64/boot/dts/**/*.dtb
+      - name: 📦 Upload Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-Kernel
+          path: kernel/arch/arm64/boot/Image.gz-dtb
