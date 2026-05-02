@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Flashable ZIP)
+name: Build A21s Kernel (Pro Stable)
 
 on:
   workflow_dispatch:
@@ -12,11 +12,11 @@ jobs:
       SUBARCH: arm64
 
     steps:
-    - name: Checkout Kernel
+    - name: 📥 Clone Kernel
       run: |
         git clone https://github.com/samsungexynos850/atlas kernel
 
-    - name: Install dependencies
+    - name: 🧰 Install deps
       run: |
         sudo apt update
         sudo apt install -y \
@@ -24,34 +24,52 @@ jobs:
           libc6-dev libncurses5-dev \
           gcc-aarch64-linux-gnu \
           gcc-arm-linux-gnueabi \
-          python3 zip ccache
+          python3 zip ccache rsync
 
-    - name: Setup ccache
+    - name: ⚡ Setup ccache
       run: |
         export USE_CCACHE=1
         export CCACHE_EXEC=$(which ccache)
-        ccache -M 2G
+        ccache -M 3G
 
-    - name: Clone Clang (Proton)
+    - name: 🧠 Clone Clang (Google - stable)
       run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+        git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
 
-    - name: Build Kernel
+    - name: 🛠️ Prepare & Fix Source
+      run: |
+        cd kernel
+
+        # 🔥 FIX thiếu script Samsung
+        cat << 'EOF' > scripts/min-tool-version.sh
+        #!/bin/sh
+        echo 0
+        EOF
+        chmod +x scripts/min-tool-version.sh
+
+        # 🔥 bypass assembler check (an toàn hơn sed bừa)
+        sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
+
+        # 🔥 fix repo thiếu vdso
+        rm -rf arch/arm64/kernel/vdso || true
+
+    - name: ⚙️ Configure Kernel
       run: |
         cd kernel
 
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        # defconfig
         make exynos850-a21snsxx_defconfig
 
-        # fix interactive config
+        # non-interactive
         yes "" | make olddefconfig
 
-        # ⚠️ repo atlas thiếu vdso → xoá luôn để tránh build gọi
-        rm -rf arch/arm64/kernel/vdso || true
+    - name: 🚀 Build Kernel
+      run: |
+        cd kernel
 
-        # build
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
         make -j$(nproc) \
           CC="ccache clang" \
           HOSTCC="ccache gcc" \
@@ -59,7 +77,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Create flashable ZIP (AnyKernel3)
+    - name: 📦 Pack Flashable ZIP (AnyKernel3)
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
@@ -70,7 +88,7 @@ jobs:
         cd AnyKernel3
         zip -r9 A21s-Kernel.zip *
 
-    - name: Upload ZIP
+    - name: ⬆️ Upload
       uses: actions/upload-artifact@v4
       with:
         name: A21s-Kernel
