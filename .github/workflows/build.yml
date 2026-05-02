@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Exynos 850 + KSU)
+name: Build A21s Kernel (Flashable ZIP)
 
 on:
   workflow_dispatch:
@@ -7,67 +7,69 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+
     steps:
-      - name: 📥 Clone Kernel Source
-        run: |
-          git clone https://github.com/samsungexynos850/atlas kernel
+    - name: Checkout Kernel
+      run: |
+        git clone https://github.com/samsungexynos850/atlas kernel
+        cd kernel
 
-      - name: 📦 Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            git bc bison flex libssl-dev make \
-            libc6-dev libncurses5-dev \
-            crossbuild-essential-arm64 \
-            crossbuild-essential-armhf \
-            gcc g++ clang lld
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          git bc bison flex libssl-dev make \
+          libc6-dev libncurses5-dev \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi \
+          python3 zip
 
-      - name: ⚙️ Setup Clang (FIX TAG)
-        run: |
-          cd kernel
-          git clone --depth=1 --branch llvmorg-17.0.0 https://github.com/llvm/llvm-project clang
+    - name: Clone Clang (Proton)
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-      - name: 🔧 Setup KernelSU
-        run: |
-          cd kernel
-          git clone https://github.com/tiann/KernelSU
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/exynos850-a21snsxx_defconfig
+    - name: Build Kernel
+      run: |
+        cd kernel
 
-      - name: 🛠 Build Kernel
-        run: |
-          cd kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH=$PWD/clang/bin:/usr/bin:$PATH
+        make exynos850-a21snsxx_defconfig
 
-          # 🔥 TẮT CCACHE (fix lỗi của bạn)
-          export USE_CCACHE=0
-          export CCACHE_DISABLE=1
+        # ✅ fix config (no interactive)
+        yes "" | make olddefconfig
 
-          make exynos850-a21snsxx_defconfig
+        # ✅ tắt VDSO đúng cách (KHÔNG phá Makefile)
+        scripts/config --disable VDSO || true
+        scripts/config --disable COMPAT_VDSO || true
 
-          # 🔥 FIX interactive config
-          yes "" | make olddefconfig
+        make olddefconfig
 
-          # 🔥 FIX VDSO (dứt điểm)
-          scripts/config --disable VDSO || true
-          scripts/config --disable COMPAT_VDSO || true
+        # 🔥 build
+        make -j$(nproc) \
+          CC=clang \
+          HOSTCC=gcc \
+          HOSTCXX=g++ \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          mkdir -p arch/arm64/kernel/vdso
-          echo "SECTIONS {}" > arch/arm64/kernel/vdso/vdso.lds
+    - name: Create flashable ZIP (AnyKernel3)
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3
 
-          # 🔥 BUILD
-          make -j$(nproc) \
-            CC=clang \
-            HOSTCC=gcc \
-            HOSTCXX=g++ \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            Image.gz-dtb
+        cp kernel/arch/arm64/boot/Image.gz AnyKernel3/
+        # nếu có dtb/dtbo thì copy thêm:
+        cp kernel/arch/arm64/boot/dtb.img AnyKernel3/ 2>/dev/null || true
+        cp kernel/arch/arm64/boot/dtbo.img AnyKernel3/ 2>/dev/null || true
 
-      - name: 📦 Upload Kernel
-        uses: actions/upload-artifact@v4
-        with:
-          name: A21s-Kernel
-          path: kernel/arch/arm64/boot/Image.gz-dtb
+        cd AnyKernel3
+        zip -r9 A21s-Kernel.zip *
+
+    - name: Upload ZIP
+      uses: actions/upload-artifact@v4
+      with:
+        name: A21s-Kernel
+        path: AnyKernel3/A21s-Kernel.zip
