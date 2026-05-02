@@ -1,4 +1,4 @@
-name: Build A21s Kernel (KernelSU Working)
+name: Build A21s Kernel (FINAL - KSU + Correct Defconfig)
 
 on:
   push:
@@ -24,34 +24,37 @@ jobs:
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
 
-    # 🔥 CÀI KERNELSU ĐÚNG CÁCH
+    # 🔥 CÀI KERNELSU ĐÚNG CÁCH (AUTO PATCH)
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-    - name: Fix permissions
-      run: |
-        chmod -R +x scripts
-
+    # 🔥 FIX SCRIPT THIẾU
     - name: Fix missing scripts
       run: |
         echo '#!/bin/sh' > scripts/min-tool-version.sh
         echo 'echo 0' >> scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
 
+    - name: Fix permissions
+      run: |
+        chmod -R +x scripts
+
     - name: Set environment
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
 
+    # 🧼 CLEAN BUILD
     - name: Clean build
       run: |
         make clean || true
         make mrproper || true
 
+    # ✅ BUILD ĐÚNG DEFCONFIG
     - name: Build kernel
       run: |
-        make exynos_defconfig
+        make exynos850-a21snsxx_defconfig
         make -j$(nproc)
 
     - name: Upload kernel
