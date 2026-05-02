@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL NO CCACHE)
+name: Build A21s Kernel (FINAL FIX CCACHE REAL)
 
 on:
   push:
@@ -17,6 +17,13 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
+    # 🔥 FIX CCACHE CỨNG TRONG KERNEL
+    - name: Fake ccache
+      run: |
+        mkdir -p fakebin
+        ln -s /usr/bin/gcc fakebin/ccache
+        echo "$PWD/fakebin" >> $GITHUB_PATH
+
     - name: Download Clang
       run: |
         git clone --depth=1 https://github.com/llvm/llvm-project clang
@@ -24,11 +31,6 @@ jobs:
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-    - name: Disable ccache
-      run: |
-        export USE_CCACHE=0
-        export CCACHE_DISABLE=1
 
     - name: Fix scripts
       run: |
