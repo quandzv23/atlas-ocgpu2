@@ -49,7 +49,10 @@ jobs:
 
           # remove vdso (repo lỗi thiếu file)
           rm -rf arch/arm64/kernel/vdso || true
-
+      - name: 🧰 Install ccache (fix)
+        run: |
+         sudo apt update
+         sudo apt install -y ccache
       - name: ⚙️ Configure
         run: |
           cd kernel
@@ -60,15 +63,8 @@ jobs:
 
       - name: 🔥 Build kernel
         run: |
-          cd kernel
-
-          # remove mọi chỗ gọi ccache
-          grep -RIl "ccache" . | xargs -r sed -i 's/\bccache\b\s*//g'
-          
-          unset CCACHE_DIR
-          unset CCACHE_BASEDIR
+          cd kernel        
           export USE_CCACHE=0
-          export CCACHE_DISABLE=1
           
           make -j$(nproc) \
             CC=clang \
