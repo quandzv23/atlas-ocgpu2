@@ -63,9 +63,10 @@ jobs:
           cd kernel
 
           # remove mọi chỗ gọi ccache
-          grep -rl "ccache" . | xargs sed -i 's/ccache //g' || true
+          grep -RIl "ccache" . | xargs -r sed -i 's/\bccache\b\s*//g'
           
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          unset CCACHE_DIR
+          unset CCACHE_BASEDIR
           export USE_CCACHE=0
           export CCACHE_DISABLE=1
           
