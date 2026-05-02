@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Fix Missing Script)
+name: Build A21s Kernel (Fixed KernelSU + Clean)
 
 on:
   push:
@@ -24,17 +24,17 @@ jobs:
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
 
-    - name: Clone KernelSU (FIX LỖI)
+    # 🔥 FIX KERNELSU TRIỆT ĐỂ
+    - name: Setup KernelSU (clean + clone)
       run: |
-        if [ ! -d "drivers/kernelsu" ]; then
-          git clone https://github.com/tiann/KernelSU.git drivers/kernelsu
-        fi
+        rm -rf drivers/kernelsu
+        git clone --depth=1 https://github.com/tiann/KernelSU.git drivers/kernelsu
 
     - name: Fix permissions
       run: |
         chmod -R +x scripts
 
-    - name: Fix missing scripts (IMPORTANT)
+    - name: Fix missing scripts
       run: |
         echo '#!/bin/sh' > scripts/min-tool-version.sh
         echo 'echo 0' >> scripts/min-tool-version.sh
@@ -44,6 +44,12 @@ jobs:
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
+
+    # 🧼 CLEAN BUILD TRÁNH LỖI NGẦM
+    - name: Clean build
+      run: |
+        make clean || true
+        make mrproper || true
 
     - name: Build kernel
       run: |
