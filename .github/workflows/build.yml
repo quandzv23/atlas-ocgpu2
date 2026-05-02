@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL NO LD BUG)
+name: Build A21s Kernel (FINAL STABLE VDSO FIX)
 
 on:
   push:
@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v4
 
+    # 🔥 FIX TREO APT
     - name: Fix apt mirror
       run: |
         sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
@@ -21,20 +23,23 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
 
+    # 🔥 TẢI CLANG NHẸ + ỔN ĐỊNH
     - name: Download Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔥 FIX CHÍNH: XÓA LD CỦA CLANG
+    # 🔥 XÓA LINKER LỖI (FIX libc relr.dyn)
     - name: Remove broken clang linker
       run: |
         rm -f clang/bin/ld
         rm -f clang/bin/ld.lld
 
+    # 🔥 KERNELSU
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
+    # 🔥 FIX SCRIPT THIẾU
     - name: Fix scripts
       run: |
         echo '#!/bin/sh' > scripts/min-tool-version.sh
@@ -42,21 +47,29 @@ jobs:
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts
 
-    - name: Set env
+    - name: Set environment
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
 
-    - name: Clean
+    - name: Clean build
       run: |
         make clean || true
         make mrproper || true
 
-    - name: Build
+    # 🚀 BUILD KERNEL
+    - name: Build kernel
       run: |
         export PATH=$PWD/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
+
+        # 🔥 FIX VDSO (LỖI vdso.lds)
+        scripts/config --disable VDSO || true
+        scripts/config --disable COMPAT_VDSO || true
+        sed -i 's/CONFIG_VDSO=y/CONFIG_VDSO=n/g' .config || true
+
+        make olddefconfig
 
         make -j$(nproc) \
           CC=clang \
@@ -65,7 +78,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Upload
+    - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
         name: A21s-Kernel-KSU
