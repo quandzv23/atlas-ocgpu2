@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL STABLE)
+name: Build A21s Kernel (FINAL FIX LINKER)
 
 on:
   push:
@@ -12,7 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 🔥 FIX MIRROR (TRÁNH TREO)
     - name: Fix apt mirror
       run: |
         sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
@@ -22,18 +21,14 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
 
-    # 🔥 DÙNG CCACHE THẬT (KHÔNG FAKE)
     - name: Setup ccache
       run: |
         echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-        echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
 
-    # 🔥 CLANG TOOLCHAIN GỌN NHẸ (KHÔNG DÙNG LLVM FULL)
     - name: Download Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔥 KERNELSU
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
@@ -55,7 +50,7 @@ jobs:
         make clean || true
         make mrproper || true
 
-    # 🚀 BUILD CHUẨN
+    # 🚀 BUILD ĐÚNG CÁCH (KHÔNG PHÁ HOST TOOLCHAIN)
     - name: Build
       run: |
         export PATH=$PWD/clang/bin:$PATH
@@ -63,13 +58,9 @@ jobs:
         make exynos850-a21snsxx_defconfig
 
         make -j$(nproc) \
-          CC="ccache clang" \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
+          CC=clang \
+          HOSTCC=gcc \
+          HOSTCXX=g++ \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
