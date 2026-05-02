@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Pro Stable)
+name: Build A21s Kernel (Stable ZIP)
 
 on:
   workflow_dispatch:
@@ -12,11 +12,18 @@ jobs:
       SUBARCH: arm64
 
     steps:
-    - name: 📥 Clone Kernel
+    - name: 📥 Clone kernel
       run: |
         git clone https://github.com/samsungexynos850/atlas kernel
 
-    - name: 🧰 Install deps
+    - name: 🧹 Free disk space
+      run: |
+        rm -rf kernel/.git
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+
+    - name: 🧰 Install dependencies
       run: |
         sudo apt update
         sudo apt install -y \
@@ -30,44 +37,40 @@ jobs:
       run: |
         export USE_CCACHE=1
         export CCACHE_EXEC=$(which ccache)
-        ccache -M 3G
+        ccache -M 2G
 
-    - name: 🧠 Clone Clang (Google - stable)
+    - name: 🧠 Clone Clang (Proton - nhẹ)
       run: |
-        git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    - name: 🛠️ Prepare & Fix Source
+    - name: 🛠️ Fix source (Samsung issues)
       run: |
         cd kernel
 
-        # 🔥 FIX thiếu script Samsung
+        # FIX thiếu script
         cat << 'EOF' > scripts/min-tool-version.sh
-        #!/bin/sh
-        echo 0
-        EOF
+#!/bin/sh
+echo 0
+EOF
         chmod +x scripts/min-tool-version.sh
 
-        # 🔥 bypass assembler check (an toàn hơn sed bừa)
+        # bypass assembler check
         sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
 
-        # 🔥 fix repo thiếu vdso
+        # repo thiếu vdso → remove
         rm -rf arch/arm64/kernel/vdso || true
 
-    - name: ⚙️ Configure Kernel
+    - name: ⚙️ Configure
       run: |
         cd kernel
-
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
-
-        # non-interactive
         yes "" | make olddefconfig
 
-    - name: 🚀 Build Kernel
+    - name: 🚀 Build
       run: |
         cd kernel
-
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
         make -j$(nproc) \
@@ -77,7 +80,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: 📦 Pack Flashable ZIP (AnyKernel3)
+    - name: 📦 Pack ZIP (AnyKernel3)
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
