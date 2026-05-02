@@ -24,6 +24,12 @@ jobs:
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
 
+    - name: Clone KernelSU (FIX LỖI)
+      run: |
+        if [ ! -d "drivers/kernelsu" ]; then
+          git clone https://github.com/tiann/KernelSU.git drivers/kernelsu
+        fi
+
     - name: Fix permissions
       run: |
         chmod -R +x scripts
