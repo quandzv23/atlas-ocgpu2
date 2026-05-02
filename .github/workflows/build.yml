@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL FIX CCACHE REAL)
+name: Build A21s Kernel (FINAL NO FREEZE)
 
 on:
   push:
@@ -12,12 +12,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # 🔥 FIX TREO APT
+    - name: Fix apt mirror
+      run: |
+        sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
+
     - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git
 
-    # 🔥 FIX CCACHE CỨNG TRONG KERNEL
+    # 🔥 FIX CCACHE CỨNG
     - name: Fake ccache
       run: |
         mkdir -p fakebin
