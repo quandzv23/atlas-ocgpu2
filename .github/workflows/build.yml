@@ -24,9 +24,9 @@ jobs:
             gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi \
             python3 zip
-
       - name: 📥 Clone kernel
         run: |
+          rm -rf kernel
           git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
       - name: ⚡ Clone Clang (Proton - nhẹ)
