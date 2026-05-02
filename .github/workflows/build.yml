@@ -5,79 +5,75 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    env:
-      ARCH: arm64
-      SUBARCH: arm64
+    runs-on: ubuntu-22.04
 
     steps:
-    - name: 📥 Checkout repo
+    - name: 📦 Checkout
       uses: actions/checkout@v4
 
-    - name: 🧹 Clean disk (tránh full)
+    - name: ⚙️ Setup build env
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/lib/android
-        df -h
+        sudo apt update
+        sudo apt install -y \
+          build-essential bc bison flex curl zip unzip \
+          libssl-dev libelf-dev \
+          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
+    # 🔥 Lấy kernel
     - name: 📥 Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: ⚙️ Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          build-essential \
-          bc \
-          bison \
-          flex \
-          libssl-dev \
-          libelf-dev \
-          gcc \
-          g++ \
-          make \
-          git
-
-    - name: 🧠 Clone clang (Proton nhẹ)
+    # 🔥 Clang NHẸ (tránh full prebuilts nặng -> hết disk)
+    - name: ⚡ Download clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    - name: 🔧 Fix Samsung source
+    # 🔥 FIX CCACHE (QUAN TRỌNG)
+    - name: ❌ Remove ccache
       run: |
         cd kernel
+        grep -rl "ccache" . | xargs sed -i 's/ccache //g' || true
 
-        # fix thiếu script
-        mkdir -p scripts
-        cat << 'EOF' > scripts/min-tool-version.sh
-        #!/bin/sh
-        echo 0
-        EOF
-        chmod +x scripts/min-tool-version.sh
+    # 🔥 FIX linker lỗi RELR
+    - name: 🔧 Force system linker
+      run: |
+        export LD=/usr/bin/ld
+        export HOSTLD=/usr/bin/ld
 
-        # bypass assembler check
-        sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
-
-        # remove vdso (repo thiếu file)
-        rm -rf arch/arm64/kernel/vdso || true
-
+    # 🔥 CONFIG (NON-INTERACTIVE)
     - name: ⚙️ Configure kernel
       run: |
         cd kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
         make exynos850-a21snsxx_defconfig
+
+        # auto config không hỏi
         yes "" | make olddefconfig
 
-    - name: 🔥 Build kernel (stable)
+    # 🔥 FIX VDSO (repo này thiếu file vdso)
+    - name: 💥 Disable VDSO safely
       run: |
         cd kernel
 
-        export CC=$GITHUB_WORKSPACE/clang/bin/clang
-        export CLANG_TRIPLE=aarch64-linux-gnu-
+        echo "CONFIG_VDSO=n" >> .config
+        echo "CONFIG_COMPAT_VDSO=n" >> .config
 
-        # đảm bảo không dính clang ld
+        yes "" | make olddefconfig
+
+    # 🔥 BUILD
+    - name: 🔥 Build kernel
+      run: |
+        cd kernel
+
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
+        export CC=clang
+        export HOSTCC=gcc
+        export HOSTCXX=g++
+
         export LD=/usr/bin/ld
         export HOSTLD=/usr/bin/ld
 
@@ -85,7 +81,7 @@ jobs:
         export CCACHE_DISABLE=1
 
         make -j$(nproc) \
-          CC=$CC \
+          CC=clang \
           HOSTCC=gcc \
           HOSTCXX=g++ \
           LD=/usr/bin/ld \
@@ -93,8 +89,9 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
+    # 📦 PACK OUTPUT
     - name: 📦 Upload Image
       uses: actions/upload-artifact@v4
       with:
-        name: Kernel-Image
+        name: kernel-image
         path: kernel/arch/arm64/boot/Image*
