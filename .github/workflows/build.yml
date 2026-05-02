@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Fixed KernelSU + Clean)
+name: Build A21s Kernel (KernelSU Working)
 
 on:
   push:
@@ -24,11 +24,10 @@ jobs:
         ln -s /usr/bin/env fakebin/ccache
         echo "$PWD/fakebin" >> $GITHUB_PATH
 
-    # 🔥 FIX KERNELSU TRIỆT ĐỂ
-    - name: Setup KernelSU (clean + clone)
+    # 🔥 CÀI KERNELSU ĐÚNG CÁCH
+    - name: Integrate KernelSU
       run: |
-        rm -rf drivers/kernelsu
-        git clone --depth=1 https://github.com/tiann/KernelSU.git drivers/kernelsu
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
     - name: Fix permissions
       run: |
@@ -45,7 +44,6 @@ jobs:
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
 
-    # 🧼 CLEAN BUILD TRÁNH LỖI NGẦM
     - name: Clean build
       run: |
         make clean || true
@@ -59,7 +57,7 @@ jobs:
     - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel
+        name: A21s-Kernel-KSU
         path: |
           arch/arm64/boot/Image.gz
           arch/arm64/boot/dts/**/*.dtb
