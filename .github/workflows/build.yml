@@ -1,4 +1,4 @@
-name: Build Kernel A21s
+name: Build A21s Kernel
 
 on:
   workflow_dispatch:
@@ -12,81 +12,89 @@ jobs:
       SUBARCH: arm64
 
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
+    - name: 📥 Checkout repo
+      uses: actions/checkout@v4
 
-      - name: 🧰 Setup build env
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            bc bison flex libssl-dev make \
-            libc6-dev libncurses5-dev \
-            gcc-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi \
-            python3 zip
-      - name: 📥 Clone kernel
-        run: |
-          rm -rf kernel
-          git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
+    - name: 🧹 Clean disk (tránh full)
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        df -h
 
-      - name: ⚡ Clone Clang (Proton - nhẹ)
-        run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+    - name: 📥 Clone kernel
+      run: |
+        rm -rf kernel
+        git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-      - name: 🔧 Fix Samsung source
-        run: |
-          cd kernel
+    - name: ⚙️ Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          build-essential \
+          bc \
+          bison \
+          flex \
+          libssl-dev \
+          libelf-dev \
+          gcc \
+          g++ \
+          make \
+          git
 
-          # FIX thiếu script
-          cat << 'EOF' > scripts/min-tool-version.sh
-          #!/bin/sh
-          echo 0
-          EOF
-          chmod +x scripts/min-tool-version.sh
+    - name: 🧠 Clone clang (Proton nhẹ)
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-          # bypass assembler check
-          sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
+    - name: 🔧 Fix Samsung source
+      run: |
+        cd kernel
 
-          # remove vdso (repo lỗi thiếu file)
-          rm -rf arch/arm64/kernel/vdso || true
-      - name: 🧰 Install ccache (fix)
-        run: |
-         sudo apt update
-         sudo apt install -y ccache
-      - name: ⚙️ Configure
-        run: |
-          cd kernel
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        # fix thiếu script
+        mkdir -p scripts
+        cat << 'EOF' > scripts/min-tool-version.sh
+        #!/bin/sh
+        echo 0
+        EOF
+        chmod +x scripts/min-tool-version.sh
 
-          make exynos850-a21snsxx_defconfig
-          yes "" | make olddefconfig
+        # bypass assembler check
+        sed -i 's/exit 1/exit 0/g' scripts/Kconfig.include || true
 
-      - name: 🔥 Build kernel
-        run: |
-          cd kernel        
-          export USE_CCACHE=0
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-          export LD=/usr/bin/ld
-          export HOSTLD=/usr/bin/ld
-          make -j$(nproc) \
-            CC=clang \
-            HOSTCC=gcc \
-            HOSTCXX=g++ \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        # remove vdso (repo thiếu file)
+        rm -rf arch/arm64/kernel/vdso || true
 
-      - name: 📦 Pack AnyKernel3 ZIP
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel
+    - name: ⚙️ Configure kernel
+      run: |
+        cd kernel
+        make exynos850-a21snsxx_defconfig
+        yes "" | make olddefconfig
 
-          cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel/ || true
-          cp kernel/arch/arm64/boot/Image.gz AnyKernel/ || true
+    - name: 🔥 Build kernel (stable)
+      run: |
+        cd kernel
 
-          cd AnyKernel
-          zip -r9 kernel-a21s.zip *
+        export CC=$GITHUB_WORKSPACE/clang/bin/clang
+        export CLANG_TRIPLE=aarch64-linux-gnu-
 
-      - name: ⬆️ Upload ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-a21s
-          path: AnyKernel/kernel-a21s.zip
+        # đảm bảo không dính clang ld
+        export LD=/usr/bin/ld
+        export HOSTLD=/usr/bin/ld
+
+        export USE_CCACHE=0
+        export CCACHE_DISABLE=1
+
+        make -j$(nproc) \
+          CC=$CC \
+          HOSTCC=gcc \
+          HOSTCXX=g++ \
+          LD=/usr/bin/ld \
+          HOSTLD=/usr/bin/ld \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+    - name: 📦 Upload Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kernel-Image
+        path: kernel/arch/arm64/boot/Image*
