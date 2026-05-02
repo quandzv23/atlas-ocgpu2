@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL SAFE FIX)
+name: Build A21s Kernel (FINAL CLEAN REAL)
 
 on:
   push:
@@ -11,6 +11,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    # 🔥 RESET SOURCE (CỨU MAKEFILE)
+    - name: Reset source
+      run: |
+        git reset --hard
+        git clean -fd
 
     - name: Fix apt mirror
       run: |
@@ -48,8 +54,7 @@ jobs:
 
     - name: Clean
       run: |
-        make clean || true
-        make mrproper || true
+        make mrproper
 
     - name: Build
       run: |
@@ -57,14 +62,11 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 TẮT VDSO (config)
-        scripts/config --disable VDSO || true
-        scripts/config --disable COMPAT_VDSO || true
+        # 🔥 TẮT VDSO ĐÚNG CÁCH
+        echo "CONFIG_VDSO=n" >> .config
+        echo "CONFIG_COMPAT_VDSO=n" >> .config
 
         make olddefconfig
-
-        # 🔥 FIX VDSO SAFE (KHÔNG PHÁ endif)
-        sed -i 's/vdso/#vdso/g' arch/arm64/Makefile
 
         make -j$(nproc) \
           CC=clang \
