@@ -15,7 +15,6 @@ jobs:
     - name: Checkout Kernel
       run: |
         git clone https://github.com/samsungexynos850/atlas kernel
-        cd kernel
 
     - name: Install dependencies
       run: |
@@ -25,7 +24,13 @@ jobs:
           libc6-dev libncurses5-dev \
           gcc-aarch64-linux-gnu \
           gcc-arm-linux-gnueabi \
-          python3 zip
+          python3 zip ccache
+
+    - name: Setup ccache
+      run: |
+        export USE_CCACHE=1
+        export CCACHE_EXEC=$(which ccache)
+        ccache -M 2G
 
     - name: Clone Clang (Proton)
       run: |
@@ -37,22 +42,20 @@ jobs:
 
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
+        # defconfig
         make exynos850-a21snsxx_defconfig
 
-        # ✅ fix config (no interactive)
+        # fix interactive config
         yes "" | make olddefconfig
 
-        # ✅ tắt VDSO đúng cách (KHÔNG phá Makefile)
-        scripts/config --disable VDSO || true
-        scripts/config --disable COMPAT_VDSO || true
+        # ⚠️ repo atlas thiếu vdso → xoá luôn để tránh build gọi
+        rm -rf arch/arm64/kernel/vdso || true
 
-        make olddefconfig
-
-        # 🔥 build
+        # build
         make -j$(nproc) \
-          CC=clang \
-          HOSTCC=gcc \
-          HOSTCXX=g++ \
+          CC="ccache clang" \
+          HOSTCC="ccache gcc" \
+          HOSTCXX="ccache g++" \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
@@ -60,8 +63,7 @@ jobs:
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
-        cp kernel/arch/arm64/boot/Image.gz AnyKernel3/
-        # nếu có dtb/dtbo thì copy thêm:
+        cp kernel/arch/arm64/boot/Image.gz AnyKernel3/ || exit 1
         cp kernel/arch/arm64/boot/dtb.img AnyKernel3/ 2>/dev/null || true
         cp kernel/arch/arm64/boot/dtbo.img AnyKernel3/ 2>/dev/null || true
 
