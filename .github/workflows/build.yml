@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL ULTIMATE FIX)
+name: Build A21s Kernel (FINAL SAFE FIX)
 
 on:
   push:
@@ -10,10 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    # 🔥 FIX APT (TRÁNH TREO)
     - name: Fix apt mirror
       run: |
         sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
@@ -23,23 +21,19 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev curl git ccache
 
-    # 🔥 CLANG NHẸ + ỔN ĐỊNH
     - name: Download Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔥 FIX LINKER LỖI (.relr.dyn)
     - name: Remove broken clang linker
       run: |
         rm -f clang/bin/ld
         rm -f clang/bin/ld.lld
 
-    # 🔥 KERNELSU
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-    # 🔥 FIX SCRIPT THIẾU
     - name: Fix scripts
       run: |
         echo '#!/bin/sh' > scripts/min-tool-version.sh
@@ -47,31 +41,30 @@ jobs:
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts
 
-    - name: Set environment
+    - name: Set env
       run: |
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "SUBARCH=arm64" >> $GITHUB_ENV
 
-    - name: Clean build
+    - name: Clean
       run: |
         make clean || true
         make mrproper || true
 
-    # 🚀 BUILD KERNEL
-    - name: Build kernel
+    - name: Build
       run: |
         export PATH=$PWD/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 TẮT VDSO (config level)
+        # 🔥 TẮT VDSO (config)
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
         make olddefconfig
 
-        # 🔥 KILL VDSO (MAKEFILE LEVEL - QUAN TRỌNG NHẤT)
-        sed -i '/vdso/d' arch/arm64/Makefile
+        # 🔥 FIX VDSO SAFE (KHÔNG PHÁ endif)
+        sed -i 's/vdso/#vdso/g' arch/arm64/Makefile
 
         make -j$(nproc) \
           CC=clang \
@@ -80,7 +73,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Upload kernel
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: A21s-Kernel-KSU
