@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL FIX REAL)
+name: Build A21s Kernel (FINAL NO LD BUG)
 
 on:
   push:
@@ -25,6 +25,12 @@ jobs:
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
+    # 🔥 FIX CHÍNH: XÓA LD CỦA CLANG
+    - name: Remove broken clang linker
+      run: |
+        rm -f clang/bin/ld
+        rm -f clang/bin/ld.lld
+
     - name: Integrate KernelSU
       run: |
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
@@ -46,10 +52,8 @@ jobs:
         make clean || true
         make mrproper || true
 
-    # 🔥 BUILD CHUẨN KHÔNG ĐỤNG LINKER
     - name: Build
       run: |
-        export PATH=/usr/bin:$PATH   # ⚠️ ƯU TIÊN LD HỆ THỐNG
         export PATH=$PWD/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
@@ -58,8 +62,6 @@ jobs:
           CC=clang \
           HOSTCC=gcc \
           HOSTCXX=g++ \
-          LD=/usr/bin/ld \
-          HOSTLD=/usr/bin/ld \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
