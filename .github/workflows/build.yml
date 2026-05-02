@@ -65,7 +65,9 @@ jobs:
         run: |
           cd kernel        
           export USE_CCACHE=0
-          
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export LD=/usr/bin/ld
+          export HOSTLD=/usr/bin/ld
           make -j$(nproc) \
             CC=clang \
             HOSTCC=gcc \
