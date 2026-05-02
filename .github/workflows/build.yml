@@ -39,9 +39,9 @@ jobs:
 
           # FIX thiếu script
           cat << 'EOF' > scripts/min-tool-version.sh
-#!/bin/sh
-echo 0
-EOF
+          #!/bin/sh
+          echo 0
+          EOF
           chmod +x scripts/min-tool-version.sh
 
           # bypass assembler check
