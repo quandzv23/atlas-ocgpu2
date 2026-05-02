@@ -11,7 +11,6 @@ jobs:
       - name: 📥 Clone Kernel Source
         run: |
           git clone https://github.com/samsungexynos850/atlas kernel
-          cd kernel
 
       - name: 📦 Install Dependencies
         run: |
@@ -23,13 +22,10 @@ jobs:
             crossbuild-essential-armhf \
             gcc g++ clang lld
 
-      - name: ⚙️ Setup Clang
+      - name: ⚙️ Setup Clang (FIX CHUẨN)
         run: |
           cd kernel
-          git clone https://github.com/llvm/llvm-project --depth=1 clang
-          cd clang
-          git checkout llvmorg-17.0.0
-          cd ..
+          git clone --depth=1 --branch llvmorg-17.0.0 https://github.com/llvm/llvm-project clang
 
       - name: 🔧 Setup KernelSU
         run: |
@@ -47,14 +43,14 @@ jobs:
 
           make exynos850-a21snsxx_defconfig
 
-          # ✅ FIX interactive config
+          # ✅ AUTO config (fix interactive)
           yes "" | make olddefconfig
 
-          # ✅ FIX VDSO (QUAN TRỌNG NHẤT)
+          # ✅ FIX VDSO (QUAN TRỌNG)
           scripts/config --disable VDSO || true
           scripts/config --disable COMPAT_VDSO || true
 
-          # 👉 tạo vdso giả để tránh lỗi thiếu file
+          # 👉 tạo vdso giả tránh lỗi thiếu file
           mkdir -p arch/arm64/kernel/vdso
           echo "SECTIONS {}" > arch/arm64/kernel/vdso/vdso.lds
 
