@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FULL FIX)
+name: Build A21s Kernel (Stable Fix v2)
 
 on:
   workflow_dispatch:
@@ -11,15 +11,15 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 🔥 Dọn sạch để tránh "No space left"
-    - name: Free disk space
+    # 🔥 Dọn disk tránh lỗi hết dung lượng
+    - name: Free disk
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo apt clean
 
-    # 🔥 Cài full toolchain chuẩn (fix gcc + ld + libc)
-    - name: Install dependencies
+    # 🔥 Toolchain chuẩn
+    - name: Install deps
       run: |
         sudo apt update
         sudo apt install -y \
@@ -31,54 +31,61 @@ jobs:
           make \
           python3
 
-    # 🔥 Clone kernel (đảm bảo sạch)
+    # 🔥 Clone kernel sạch
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Clang NHẸ (không bị full repo -> tránh hết disk)
+    # 🔥 Clang nhẹ (tránh hết disk)
     - name: Clone clang
       run: |
         git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
 
-    - name: Build kernel
+    - name: Build
       run: |
         cd kernel
 
         export ARCH=arm64
         export SUBARCH=arm64
 
-        # 🔥 QUAN TRỌNG: giữ system toolchain
+        # 🔥 giữ gcc hệ thống + thêm clang
         export PATH=/usr/bin:$PATH
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        # 🔥 TẮT CCACHE (fix lỗi 127)
+        # 🔥 fix toàn bộ lỗi trước đó
         export CCACHE_DISABLE=1
-
-        # 🔥 FIX assembler error (repo Samsung hay dính)
         export LLVM=1
         export LLVM_IAS=1
-
-        # 🔥 FIX VDSO thiếu file (KHÔNG phá Makefile)
-        sed -i '/vdso/d' arch/arm64/Makefile
 
         # 🔥 config
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 FIX interactive
+        # 🔥 disable vdso đúng cách (KHÔNG sửa Makefile)
+        echo "CONFIG_VDSO=n" >> .config
+        echo "CONFIG_COMPAT_VDSO=n" >> .config
+
+        # 🔥 auto config (fix loop)
         yes "" | make olddefconfig
 
-        # 🔥 BUILD
+        # 🔥 fake vdso file (fix thiếu file)
+        mkdir -p arch/arm64/kernel/vdso
+        touch arch/arm64/kernel/vdso/vdso.lds
+
+        # 🔥 build
         make -j$(nproc) \
           CC=clang \
           HOSTCC=gcc \
           HOSTCXX=g++ \
           LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 🔥 Xuất kernel
     - name: Upload Image
       uses: actions/upload-artifact@v4
       with:
