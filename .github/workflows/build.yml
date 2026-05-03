@@ -1,4 +1,4 @@
-name: Build A21s Kernel (V9 FINAL)
+name: Build A21s Kernel (V10 DAILY)
 
 on:
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 KernelSU chuẩn (đúng structure)
-    - name: Add KernelSU (REAL FIXED)
+    # 🔥 KernelSU chuẩn
+    - name: Add KernelSU (REAL)
       run: |
         cd kernel
         rm -rf drivers/kernelsu
@@ -35,30 +35,28 @@ jobs:
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
 
-        # ✅ đúng cấu trúc
         mv KernelSU-*/kernel drivers/kernelsu
 
-        # add vào drivers/Kconfig nếu thiếu
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-        # verify
-        if [ ! -f drivers/kernelsu/Kconfig ]; then
-          echo "❌ KernelSU lỗi"
-          exit 1
-        fi
+        test -f drivers/kernelsu/Kconfig || exit 1
 
-        echo "✅ KernelSU OK"
-
-    # 🔥 bypass check ngu của samsung
-    - name: Fix toolchain check
+    # 🔥 FIX TOOLCHAIN CHECK
+    - name: Fix Samsung checks
       run: |
         cd kernel
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts || true
 
-    # 🔥 BUILD (an toàn, không phá vdso)
+    # 🔥 REMOVE CCACHE TRIỆT ĐỂ
+    - name: Remove ccache
+      run: |
+        cd kernel
+        find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
+
+    # 🔥 BUILD (SAFE CONFIG)
     - name: Build kernel
       run: |
         cd kernel
@@ -71,8 +69,10 @@ jobs:
         # bật KernelSU
         scripts/config --enable KSU || true
 
-        # ⚠️ KHÔNG disable VDSO nữa (gây lỗi thiếu file)
-        # scripts/config --disable VDSO ❌
+        # ⚠️ GIỮ NGUYÊN CONFIG QUAN TRỌNG (để boot ổn định)
+        # KHÔNG đụng VDSO
+        # KHÔNG OC
+        # KHÔNG tweak deep
 
         yes "" | make olddefconfig
 
@@ -89,7 +89,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 🔥 PACK ZIP FLASH (OrangeFox OK)
+    # 🔥 PACK FLASH ZIP (chuẩn OrangeFox)
     - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
@@ -98,10 +98,14 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
-        zip -r ../A21s-Kernel-KSU-V9.zip *
+
+        # set device name cho an toàn
+        sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
+
+        zip -r ../A21s-Kernel-KSU-V10.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU-V9
-        path: A21s-Kernel-KSU-V9.zip
+        name: A21s-Kernel-KSU-V10
+        path: A21s-Kernel-KSU-V10.zip
