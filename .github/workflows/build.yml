@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL FIXED)
+name: Build A21s Kernel (FINAL NO-CCACHE-FAIL)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 🔧 Cài toolchain chuẩn
+    # 🔧 Toolchain chuẩn
     - name: Install dependencies
       run: |
         sudo apt update
@@ -22,13 +22,22 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # 🔍 Verify compiler
-    - name: Verify toolchain
+    # 🔥 FIX CCACHE TRIỆT ĐỂ (QUAN TRỌNG NHẤT)
+    - name: Fix ccache wrapper
       run: |
-        which gcc
-        gcc --version
-        which clang
-        clang --version
+        sudo mkdir -p /usr/local/bin
+
+        # tạo wrapper ccache đúng chuẩn
+        echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
+        echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
+
+        sudo chmod +x /usr/local/bin/ccache
+
+        # ưu tiên PATH
+        echo "/usr/local/bin" >> $GITHUB_PATH
+
+        which ccache
+        ccache gcc --version || true
 
     # 📦 Clone kernel
     - name: Clone kernel
@@ -36,8 +45,8 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 ADD KERNELSU (TARBALL - ỔN ĐỊNH)
-    - name: Add KernelSU (stable tarball)
+    # 🔥 Add KernelSU (tarball ổn định)
+    - name: Add KernelSU
       run: |
         cd kernel
 
@@ -46,57 +55,27 @@ jobs:
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
 
-        # move đúng structure
         mv KernelSU-*/kernel drivers/kernelsu
 
-        # inject Kconfig
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-        # verify
-        if [ ! -f drivers/kernelsu/Kconfig ]; then
-          echo "❌ KernelSU lỗi"
-          exit 1
-        fi
+        test -f drivers/kernelsu/Kconfig
 
-        echo "✅ KernelSU OK"
-
-    # 🔧 Fix Samsung toolchain check
+    # 🔧 Fix toolchain check Samsung
     - name: Fix toolchain check
       run: |
         cd kernel
-        if [ -f scripts/min-tool-version.sh ]; then
-          echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
-          chmod +x scripts/min-tool-version.sh
-        fi
+        echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
+        chmod +x scripts/min-tool-version.sh
 
-    # 💀 XÓA CCACHE TRIỆT ĐỂ
-    - name: Remove ccache
-      run: |
-        cd kernel
-
-        # remove trong source
-        find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
-
-        # clear env
-        unset CCACHE || true
-        unset CCACHE_DIR || true
-        unset CCACHE_BASEDIR || true
-
-        # fix Makefile.host nếu có
-        sed -i 's/ccache gcc/gcc/g' scripts/Makefile.host || true
-
-    # 🔥 BUILD (FORCE COMPILER)
+    # 🔥 BUILD
     - name: Build kernel
       run: |
         cd kernel
 
         export ARCH=arm64
         export SUBARCH=arm64
-
-        export CC=clang
-        export HOSTCC=gcc
-        export HOSTCXX=g++
 
         make exynos850-a21snsxx_defconfig
 
@@ -112,8 +91,8 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 📦 Pack AnyKernel3
-    - name: Pack flashable zip
+    # 📦 Pack flash zip
+    - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
@@ -123,10 +102,10 @@ jobs:
         cd AnyKernel3
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
-        zip -r ../A21s-Kernel-KSU-FINAL.zip *
+        zip -r ../A21s-Kernel-KSU.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU-FINAL
-        path: A21s-Kernel-KSU-FINAL.zip
+        name: A21s-Kernel-KSU
+        path: A21s-Kernel-KSU.zip
