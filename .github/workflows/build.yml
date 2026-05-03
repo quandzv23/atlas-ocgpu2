@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Clean Auto)
+name: Build A21s Kernel (Stable)
 
 on:
   workflow_dispatch:
@@ -26,35 +26,20 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: Clone Clang (auto)
+    - name: Clone Clang PREBUILT (NHẸ + CHẮC)
       run: |
-        git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
+        git clone --depth=1 https://github.com/Neutron-Toolchains/clang clang
 
-    - name: Setup Clang ENV (AUTO DETECT)
+    - name: Setup ENV
       run: |
-        # 🔥 tìm clang/bin thật
-        CLANG_BIN=$(find $GITHUB_WORKSPACE/clang -type d -name bin | head -n 1)
+        # ✅ Clang chuẩn luôn có bin
+        export CLANG_PATH=$GITHUB_WORKSPACE/clang/bin
 
-        if [ -z "$CLANG_BIN" ]; then
-          echo "❌ Không tìm thấy clang bin"
-          exit 1
-        fi
+        echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
+        echo "$CLANG_PATH" >> $GITHUB_PATH
 
-        echo "✅ CLANG_BIN=$CLANG_BIN"
-
-        # 🔥 fix linker (tránh lỗi libc)
-        ln -sf /usr/bin/ld.lld $CLANG_BIN/ld
-
-        # 🔥 fake gcc (fix cannot find gcc)
-        echo -e '#!/bin/bash\nexec clang "$@"' > $CLANG_BIN/gcc
-        chmod +x $CLANG_BIN/gcc
-
-        # 🔥 disable ccache
+        # ❌ tắt ccache hoàn toàn
         echo "USE_CCACHE=0" >> $GITHUB_ENV
-
-        # 🔥 export PATH
-        echo "CLANG_BIN=$CLANG_BIN" >> $GITHUB_ENV
-        echo "$CLANG_BIN" >> $GITHUB_PATH
 
     - name: Build kernel
       run: |
@@ -62,14 +47,15 @@ jobs:
 
         export ARCH=arm64
         export SUBARCH=arm64
+        export PATH=$CLANG_PATH:$PATH
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 disable VDSO (fix thiếu vdso.lds)
+        # 🔥 Fix VDSO (lỗi repo atlas)
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
-        # 🔥 auto config (no interactive)
+        # 🔥 auto config
         yes "" | make olddefconfig
 
         make -j$(nproc) \
@@ -85,7 +71,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Pack AnyKernel3 (Flash OrangeFox)
+    - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
