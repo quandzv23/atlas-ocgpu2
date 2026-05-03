@@ -1,4 +1,4 @@
-name: 🔥 Build A21s Kernel (ULTIMATE)
+name: 🔥 Build A21s Kernel V2 (ULTIMATE STABLE)
 
 on:
   workflow_dispatch:
@@ -11,15 +11,15 @@ jobs:
     - name: 📦 Checkout
       uses: actions/checkout@v4
 
-    # 🧹 DỌN DISK (cực quan trọng)
-    - name: 🧹 Free disk space
+    # 🧹 Dọn ổ (tránh hết disk)
+    - name: 🧹 Free disk
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
         sudo rm -rf /usr/local/lib/android
         df -h
 
-    # 📦 CÀI TOOL
+    # ⚙️ Cài toolchain
     - name: ⚙️ Install deps
       run: |
         sudo apt update
@@ -29,43 +29,50 @@ jobs:
           gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
           lld llvm
 
-    # 🔥 FIX CCACHE TRIỆT ĐỂ
-    - name: 🧠 Fake ccache (no error)
+    # 🧠 Fake ccache (khỏi lỗi)
+    - name: 🧠 Fake ccache
       run: |
         sudo ln -sf /usr/bin/gcc /usr/bin/ccache
 
-    # 📥 CLONE KERNEL
+    # 📥 Clone kernel
     - name: 📥 Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # ⚡ CLANG NHẸ (không full prebuilts)
+    # ⚡ Clang nhẹ
     - name: ⚡ Get clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔧 FIX TOOLCHAIN SCRIPT THIẾU
-    - name: 🔧 Fix missing scripts
+    # 💀 Kill clang linker (cực quan trọng)
+    - name: 💀 Fix linker (critical)
+      run: |
+        rm -f clang/bin/ld || true
+
+    # 🔧 Fix script thiếu
+    - name: 🔧 Fix scripts
       run: |
         cd kernel/scripts
-        # một số repo thiếu file này
         echo '#!/bin/sh' > min-tool-version.sh
         echo 'echo 0' >> min-tool-version.sh
         chmod +x min-tool-version.sh
 
-    # ⚙️ CONFIG
+    # ⚙️ CONFIG (non-interactive + đúng linker)
     - name: ⚙️ Configure
       run: |
         cd kernel
+
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        export LD=/usr/bin/ld
+        export HOSTLD=/usr/bin/ld
 
         make exynos850-a21snsxx_defconfig
 
         yes "" | make olddefconfig
 
-    # 💥 FIX VDSO (repo này thiếu thật)
-    - name: 💥 Disable VDSO (safe)
+    # 💥 Disable VDSO (repo lỗi thiếu file)
+    - name: 💥 Disable VDSO
       run: |
         cd kernel
 
@@ -100,9 +107,9 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 📦 OUTPUT
+    # 📦 Upload
     - name: 📦 Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel
+        name: A21s-Kernel-V2
         path: kernel/arch/arm64/boot/Image*
