@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL STABLE)
+name: Build A21s Kernel (ccache)
 
 on:
   workflow_dispatch:
@@ -8,15 +8,16 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Setup deps
+    - name: Setup deps (có ccache)
       run: |
         sudo apt update
         sudo apt install -y \
           git bc bison flex libssl-dev make \
           libc6-dev libncurses5-dev libelf-dev \
-          gcc g++ \
+          gcc g++ ccache \
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
@@ -25,14 +26,14 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: Clone Proton Clang (BEST)
+    - name: Clone Proton Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
     - name: Setup ENV
       run: |
         echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-        echo "USE_CCACHE=0" >> $GITHUB_ENV
+        echo "USE_CCACHE=1" >> $GITHUB_ENV
 
     - name: Build kernel
       run: |
@@ -43,11 +44,11 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 Fix VDSO
+        # 🔥 Fix lỗi VDSO của repo atlas
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
-        # 🔥 auto config
+        # 🔥 tránh hỏi interactive
         yes "" | make olddefconfig
 
         make -j$(nproc) \
