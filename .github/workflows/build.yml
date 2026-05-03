@@ -1,4 +1,4 @@
-name: Build A21s Kernel (STABLE PASS)
+name: Build A21s Kernel (FINAL FIXED)
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          git bc bison flex libssl-dev make \
+          git curl bc bison flex libssl-dev make \
           libc6-dev libncurses5-dev libelf-dev \
           gcc g++ \
           clang lld llvm \
@@ -36,20 +36,33 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔐 Add KernelSU (chuẩn, không lỗi Kconfig)
-    - name: Add KernelSU
+    # 🔥 ADD KERNELSU (TARBALL - ỔN ĐỊNH)
+    - name: Add KernelSU (stable tarball)
       run: |
         cd kernel
-        rm -rf drivers/kernelsu
-        git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu
 
+        rm -rf drivers/kernelsu
+
+        curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
+        tar -xzf ksu.tar.gz
+
+        # move đúng structure
+        mv KernelSU-*/kernel drivers/kernelsu
+
+        # inject Kconfig
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-        test -f drivers/kernelsu/Kconfig
+        # verify
+        if [ ! -f drivers/kernelsu/Kconfig ]; then
+          echo "❌ KernelSU lỗi"
+          exit 1
+        fi
 
-    # 🧠 Bypass check toolchain Samsung
-    - name: Fix Samsung toolchain check
+        echo "✅ KernelSU OK"
+
+    # 🔧 Fix Samsung toolchain check
+    - name: Fix toolchain check
       run: |
         cd kernel
         if [ -f scripts/min-tool-version.sh ]; then
@@ -57,26 +70,33 @@ jobs:
           chmod +x scripts/min-tool-version.sh
         fi
 
-    # 💀 Remove ccache khỏi source
+    # 💀 XÓA CCACHE TRIỆT ĐỂ
     - name: Remove ccache
       run: |
         cd kernel
+
+        # remove trong source
         find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
 
-    # 🚫 Clear env ccache
-    - name: Clear ccache env
-      run: |
-        unset CCACHE
-        unset CCACHE_DIR
-        unset CCACHE_BASEDIR
+        # clear env
+        unset CCACHE || true
+        unset CCACHE_DIR || true
+        unset CCACHE_BASEDIR || true
 
-    # 🔥 BUILD (FORCE COMPILER - QUAN TRỌNG NHẤT)
+        # fix Makefile.host nếu có
+        sed -i 's/ccache gcc/gcc/g' scripts/Makefile.host || true
+
+    # 🔥 BUILD (FORCE COMPILER)
     - name: Build kernel
       run: |
         cd kernel
 
         export ARCH=arm64
         export SUBARCH=arm64
+
+        export CC=clang
+        export HOSTCC=gcc
+        export HOSTCXX=g++
 
         make exynos850-a21snsxx_defconfig
 
@@ -103,10 +123,10 @@ jobs:
         cd AnyKernel3
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
-        zip -r ../A21s-Kernel.zip *
+        zip -r ../A21s-Kernel-KSU-FINAL.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel
-        path: A21s-Kernel.zip
+        name: A21s-Kernel-KSU-FINAL
+        path: A21s-Kernel-KSU-FINAL.zip
