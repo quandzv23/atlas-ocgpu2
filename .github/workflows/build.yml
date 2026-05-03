@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL V4)
+name: Build A21s Kernel (KernelSU)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup deps
+    - name: Install deps
       run: |
         sudo apt update
         sudo apt install -y \
@@ -26,21 +26,19 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: Fix Samsung toolchain check (bypass assembler check)
+    # 🔥 QUAN TRỌNG: thêm KernelSU
+    - name: Add KernelSU
       run: |
         cd kernel
+        rm -rf drivers/kernelsu
+        git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu
 
-        # 🔥 Fix missing script + bypass version check
-        mkdir -p scripts
+    # 🔥 fix toolchain Samsung
+    - name: Fix toolchain check
+      run: |
+        cd kernel
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
-
-        # 🔥 đảm bảo script khác chạy được
-        chmod +x scripts/*.sh || true
-
-    - name: Setup ENV
-      run: |
-        echo "USE_CCACHE=1" >> $GITHUB_ENV
 
     - name: Build kernel
       run: |
@@ -51,11 +49,14 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 Fix VDSO (repo atlas thiếu)
+        # 🔥 enable KernelSU trong config
+        scripts/config --enable KSU
+        scripts/config --enable KSU_DEBUG || true
+
+        # 🔥 fix VDSO (repo này thiếu)
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
-        # 🔥 tránh interactive
         yes "" | make olddefconfig
 
         make -j$(nproc) \
@@ -71,7 +72,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Pack AnyKernel3 (Flash OrangeFox)
+    - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
@@ -79,10 +80,10 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ || true
 
         cd AnyKernel3
-        zip -r ../A21s-Kernel.zip *
+        zip -r ../A21s-Kernel-KSU.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel
-        path: A21s-Kernel.zip
+        name: A21s-Kernel-KSU
+        path: A21s-Kernel-KSU.zip
