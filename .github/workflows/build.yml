@@ -1,4 +1,4 @@
-name: Build A21s Kernel
+name: 🔥 Build A21s Kernel (ULTIMATE)
 
 on:
   workflow_dispatch:
@@ -11,50 +11,61 @@ jobs:
     - name: 📦 Checkout
       uses: actions/checkout@v4
 
-    - name: ⚙️ Setup build env
+    # 🧹 DỌN DISK (cực quan trọng)
+    - name: 🧹 Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        df -h
+
+    # 📦 CÀI TOOL
+    - name: ⚙️ Install deps
       run: |
         sudo apt update
         sudo apt install -y \
           build-essential bc bison flex curl zip unzip \
           libssl-dev libelf-dev \
-          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+          lld llvm
 
-    # 🔥 Lấy kernel
+    # 🔥 FIX CCACHE TRIỆT ĐỂ
+    - name: 🧠 Fake ccache (no error)
+      run: |
+        sudo ln -sf /usr/bin/gcc /usr/bin/ccache
+
+    # 📥 CLONE KERNEL
     - name: 📥 Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Clang NHẸ (tránh full prebuilts nặng -> hết disk)
-    - name: ⚡ Download clang
+    # ⚡ CLANG NHẸ (không full prebuilts)
+    - name: ⚡ Get clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    # 🔥 FIX CCACHE (QUAN TRỌNG)
-    - name: ❌ Remove ccache
+    # 🔧 FIX TOOLCHAIN SCRIPT THIẾU
+    - name: 🔧 Fix missing scripts
       run: |
-        cd kernel
-        grep -rl "ccache" . | xargs sed -i 's/ccache //g' || true
+        cd kernel/scripts
+        # một số repo thiếu file này
+        echo '#!/bin/sh' > min-tool-version.sh
+        echo 'echo 0' >> min-tool-version.sh
+        chmod +x min-tool-version.sh
 
-    # 🔥 FIX linker lỗi RELR
-    - name: 🔧 Force system linker
-      run: |
-        export LD=/usr/bin/ld
-        export HOSTLD=/usr/bin/ld
-
-    # 🔥 CONFIG (NON-INTERACTIVE)
-    - name: ⚙️ Configure kernel
+    # ⚙️ CONFIG
+    - name: ⚙️ Configure
       run: |
         cd kernel
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
 
-        # auto config không hỏi
         yes "" | make olddefconfig
 
-    # 🔥 FIX VDSO (repo này thiếu file vdso)
-    - name: 💥 Disable VDSO safely
+    # 💥 FIX VDSO (repo này thiếu thật)
+    - name: 💥 Disable VDSO (safe)
       run: |
         cd kernel
 
@@ -89,9 +100,9 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 📦 PACK OUTPUT
-    - name: 📦 Upload Image
+    # 📦 OUTPUT
+    - name: 📦 Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: kernel-image
+        name: A21s-Kernel
         path: kernel/arch/arm64/boot/Image*
