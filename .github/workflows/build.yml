@@ -1,4 +1,4 @@
-name: Build A21s Kernel (V6 AUTO HEAL + KSU)
+name: Build A21s Kernel (V7 REAL KSU)
 
 on:
   workflow_dispatch:
@@ -21,39 +21,39 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # 🔥 Clone sạch
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 AUTO FIX EVERYTHING
-    - name: Auto Fix (KernelSU + toolchain + script)
+    # 🔥 ADD KERNELSU (REAL + RETRY + FAIL SAFE)
+    - name: Add KernelSU (REAL)
       run: |
         cd kernel
-
-        echo "==== FIX KernelSU ===="
         rm -rf drivers/kernelsu
-        git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu || true
 
-        # nếu clone fail → tạo dummy để không crash
+        echo "==== CLONE KernelSU (retry) ===="
+        for i in 1 2 3; do
+          git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu && break
+          echo "retry $i..."
+          sleep 2
+        done
+
+        # ❌ nếu vẫn fail → STOP build (không dùng dummy nữa)
         if [ ! -f drivers/kernelsu/Kconfig ]; then
-          echo "⚠️ KernelSU clone fail → tạo dummy"
-          mkdir -p drivers/kernelsu
-          echo 'config KSU\n\tbool "KernelSU"\n\tdefault n' > drivers/kernelsu/Kconfig
+          echo "❌ KernelSU clone FAILED → STOP"
+          exit 1
         fi
 
-        echo "==== FIX Samsung toolchain check ===="
+        echo "✅ KernelSU OK"
+
+    # 🔥 FIX SAMSUNG TOOLCHAIN CHECK
+    - name: Fix toolchain
+      run: |
+        cd kernel
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
         chmod +x scripts/*.sh || true
-
-        echo "==== FIX VDSO (missing source) ===="
-        scripts/config --disable VDSO || true
-        scripts/config --disable COMPAT_VDSO || true
-
-        echo "==== DEBUG ===="
-        ls drivers/kernelsu || true
 
     - name: Setup ENV
       run: |
@@ -67,13 +67,16 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
 
-        # 🔥 QUAN TRỌNG: sau khi fix xong mới defconfig
+        # 🔥 QUAN TRỌNG: sau khi có KernelSU mới defconfig
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 enable KernelSU nếu có
+        # 🔥 enable KernelSU
         scripts/config --enable KSU || true
 
-        # tránh interactive
+        # 🔥 fix VDSO
+        scripts/config --disable VDSO || true
+        scripts/config --disable COMPAT_VDSO || true
+
         yes "" | make olddefconfig
 
         make -j$(nproc) \
@@ -98,10 +101,10 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
-        zip -r ../A21s-Kernel-KSU-V6.zip *
+        zip -r ../A21s-Kernel-KSU-V7.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU-V6
-        path: A21s-Kernel-KSU-V6.zip
+        name: A21s-Kernel-KSU-V7
+        path: A21s-Kernel-KSU-V7.zip
