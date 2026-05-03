@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Stable Fix v2)
+name: Build A21s Kernel (FULL FINAL)
 
 on:
   workflow_dispatch:
@@ -11,14 +11,14 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 🔥 Dọn disk tránh lỗi hết dung lượng
+    # 🔥 dọn disk
     - name: Free disk
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo apt clean
 
-    # 🔥 Toolchain chuẩn
+    # 🔥 cài toolchain chuẩn
     - name: Install deps
       run: |
         sudo apt update
@@ -28,49 +28,57 @@ jobs:
           libssl-dev libelf-dev \
           gcc g++ \
           clang lld \
-          make \
-          python3
+          make python3
 
-    # 🔥 Clone kernel sạch
+    # 🔥 clone kernel
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Clang nhẹ (tránh hết disk)
+    # 🔥 clone clang nhẹ
     - name: Clone clang
       run: |
         git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
 
-    - name: Build
+    - name: Build kernel
       run: |
         cd kernel
 
         export ARCH=arm64
         export SUBARCH=arm64
 
+        # 🔥 fake ccache (fix lỗi 127)
+        mkdir -p fakebin
+        cat << 'EOF' > fakebin/ccache
+        #!/bin/bash
+        exec "$@"
+        EOF
+        chmod +x fakebin/ccache
+        export PATH=$PWD/fakebin:$PATH
+
         # 🔥 giữ gcc hệ thống + thêm clang
         export PATH=/usr/bin:$PATH
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        # 🔥 fix toàn bộ lỗi trước đó
-        export CCACHE_DISABLE=1
+        # 🔥 fix assembler / clang
         export LLVM=1
         export LLVM_IAS=1
 
         # 🔥 config
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 disable vdso đúng cách (KHÔNG sửa Makefile)
+        # 🔥 tắt vdso đúng cách
         echo "CONFIG_VDSO=n" >> .config
         echo "CONFIG_COMPAT_VDSO=n" >> .config
 
-        # 🔥 auto config (fix loop)
+        # 🔥 tránh interactive
         yes "" | make olddefconfig
 
-        # 🔥 fake vdso file (fix thiếu file)
+        # 🔥 fake vdso file (không phá Makefile)
         mkdir -p arch/arm64/kernel/vdso
         touch arch/arm64/kernel/vdso/vdso.lds
+        touch arch/arm64/kernel/vdso/vdso.so.dbg
 
         # 🔥 build
         make -j$(nproc) \
@@ -86,7 +94,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Upload Image
+    - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
         name: kernel-image
