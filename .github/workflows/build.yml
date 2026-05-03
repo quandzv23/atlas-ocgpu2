@@ -1,4 +1,4 @@
-name: 🔥 Build A21s Kernel V2 (ULTIMATE STABLE)
+name: Build A21s Kernel (FULL FIX)
 
 on:
   workflow_dispatch:
@@ -8,108 +8,79 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 📦 Checkout
+    - name: Checkout
       uses: actions/checkout@v4
 
-    # 🧹 Dọn ổ (tránh hết disk)
-    - name: 🧹 Free disk
+    # 🔥 Dọn sạch để tránh "No space left"
+    - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
         sudo rm -rf /usr/local/lib/android
-        df -h
+        sudo apt clean
 
-    # ⚙️ Cài toolchain
-    - name: ⚙️ Install deps
+    # 🔥 Cài full toolchain chuẩn (fix gcc + ld + libc)
+    - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          build-essential bc bison flex curl zip unzip \
+          build-essential \
+          bc bison flex \
           libssl-dev libelf-dev \
-          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-          lld llvm
+          gcc g++ \
+          clang lld \
+          make \
+          python3
 
-    # 🧠 Fake ccache (khỏi lỗi)
-    - name: 🧠 Fake ccache
-      run: |
-        sudo ln -sf /usr/bin/gcc /usr/bin/ccache
-
-    # 📥 Clone kernel
-    - name: 📥 Clone kernel
+    # 🔥 Clone kernel (đảm bảo sạch)
+    - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # ⚡ Clang nhẹ
-    - name: ⚡ Get clang
+    # 🔥 Clang NHẸ (không bị full repo -> tránh hết disk)
+    - name: Clone clang
       run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+        git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
 
-    # 💀 Kill clang linker (cực quan trọng)
-    - name: 💀 Fix linker (critical)
-      run: |
-        rm -f clang/bin/ld || true
-
-    # 🔧 Fix script thiếu
-    - name: 🔧 Fix scripts
-      run: |
-        cd kernel/scripts
-        echo '#!/bin/sh' > min-tool-version.sh
-        echo 'echo 0' >> min-tool-version.sh
-        chmod +x min-tool-version.sh
-
-    # ⚙️ CONFIG (non-interactive + đúng linker)
-    - name: ⚙️ Configure
+    - name: Build kernel
       run: |
         cd kernel
 
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        export LD=/usr/bin/ld
-        export HOSTLD=/usr/bin/ld
+        export ARCH=arm64
+        export SUBARCH=arm64
 
-        make exynos850-a21snsxx_defconfig
-
-        yes "" | make olddefconfig
-
-    # 💥 Disable VDSO (repo lỗi thiếu file)
-    - name: 💥 Disable VDSO
-      run: |
-        cd kernel
-
-        echo "CONFIG_VDSO=n" >> .config
-        echo "CONFIG_COMPAT_VDSO=n" >> .config
-
-        yes "" | make olddefconfig
-
-    # 🔥 BUILD
-    - name: 🔥 Build kernel
-      run: |
-        cd kernel
-
+        # 🔥 QUAN TRỌNG: giữ system toolchain
+        export PATH=/usr/bin:$PATH
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        export CC=clang
-        export HOSTCC=gcc
-        export HOSTCXX=g++
-
-        export LD=/usr/bin/ld
-        export HOSTLD=/usr/bin/ld
-
-        export USE_CCACHE=0
+        # 🔥 TẮT CCACHE (fix lỗi 127)
         export CCACHE_DISABLE=1
 
+        # 🔥 FIX assembler error (repo Samsung hay dính)
+        export LLVM=1
+        export LLVM_IAS=1
+
+        # 🔥 FIX VDSO thiếu file (KHÔNG phá Makefile)
+        sed -i '/vdso/d' arch/arm64/Makefile
+
+        # 🔥 config
+        make exynos850-a21snsxx_defconfig
+
+        # 🔥 FIX interactive
+        yes "" | make olddefconfig
+
+        # 🔥 BUILD
         make -j$(nproc) \
           CC=clang \
           HOSTCC=gcc \
           HOSTCXX=g++ \
-          LD=/usr/bin/ld \
-          HOSTLD=/usr/bin/ld \
+          LD=ld.lld \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 📦 Upload
-    - name: 📦 Upload kernel
+    # 🔥 Xuất kernel
+    - name: Upload Image
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-V2
-        path: kernel/arch/arm64/boot/Image*
+        name: kernel-image
+        path: kernel/arch/arm64/boot/Image
