@@ -37,25 +37,20 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Add KernelSU & FIX Header
+    # 🔥 Add KernelSU & FIX Header Triệt Để
     - name: Add KernelSU
       run: |
         cd kernel
         rm -rf drivers/kernelsu
         
-        # Tải KernelSU
+        # Tải KernelSU bản main
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
         mv KernelSU-*/kernel drivers/kernelsu
         
-        # [FIX 1] Định nghĩa VERSION để tránh lỗi Git Version
-        cd drivers/kernelsu
-        echo "ccflags-y += -DKSU_VERSION=11950" > VERSION
-        cd ../..
-
-        # [FIX 2] Sửa lỗi 'uapi/app_profile.h' not found quan trọng nhất
-        # Thêm đường dẫn include vào file Kbuild
-        sed -i 's|ccflags-y += -I$(srctree)/$(src)|ccflags-y += -I$(srctree)/$(src) -I$(srctree)/$(src)/uapi|g' drivers/kernelsu/Kbuild
+        # [FIX TỐI THƯỢNG] Ép Kbuild nhận diện uapi và KSU_VERSION cho toàn bộ thư mục con
+        # Lệnh này chèn cờ subdir-ccflags-y lên DÒNG ĐẦU TIÊN của file Kbuild
+        sed -i '1i subdir-ccflags-y += -I$(srctree)/drivers/kernelsu/uapi -I$(srctree)/drivers/kernelsu -DKSU_VERSION=11950' drivers/kernelsu/Kbuild
 
         # Thêm vào Kconfig
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
@@ -88,7 +83,7 @@ jobs:
         ./scripts/config --enable OVERLAY_FS
         ./scripts/config --enable KPROBE_EVENTS
 
-        # Áp dụng config mới
+        # Áp dụng config mới tự động điền 'yes' cho các tùy chọn mới
         make olddefconfig
 
         # Bắt đầu compile
