@@ -37,20 +37,21 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Add KernelSU & FIX Header Triệt Để
+    # 🔥 Add KernelSU
     - name: Add KernelSU
       run: |
         cd kernel
         rm -rf drivers/kernelsu
         
-        # Tải KernelSU bản main
+        # Tải KernelSU
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
         mv KernelSU-*/kernel drivers/kernelsu
         
-        # [FIX TỐI THƯỢNG] Ép Kbuild nhận diện uapi và KSU_VERSION cho toàn bộ thư mục con
-        # Lệnh này chèn cờ subdir-ccflags-y lên DÒNG ĐẦU TIÊN của file Kbuild
-        sed -i '1i subdir-ccflags-y += -I$(srctree)/drivers/kernelsu/uapi -I$(srctree)/drivers/kernelsu -DKSU_VERSION=11950' drivers/kernelsu/Kbuild
+        # [GIẢI PHÁP TỐI THƯỢNG CHO INCLUDE LỖI] 
+        # Copy thẳng thư mục uapi của KSU vào thư mục include/ gốc của Kernel
+        # Đảm bảo lệnh #include "uapi/app_profile.h" chạy thành công ở bất kỳ đâu
+        cp -r drivers/kernelsu/uapi/* include/uapi/ || true
 
         # Thêm vào Kconfig
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
@@ -73,6 +74,10 @@ jobs:
         export SUBARCH=arm64
         export KBUILD_BUILD_USER="Gemini"
         export KBUILD_BUILD_HOST="Github-Actions"
+        
+        # [FIX LỖI KSU_VERSION Redefined] 
+        # Cung cấp biến môi trường trực tiếp thay vì chèn vào Kbuild
+        export KSU_GIT_VERSION="11950"
 
         # Config mặc định
         make exynos850-a21snsxx_defconfig
@@ -83,7 +88,7 @@ jobs:
         ./scripts/config --enable OVERLAY_FS
         ./scripts/config --enable KPROBE_EVENTS
 
-        # Áp dụng config mới tự động điền 'yes' cho các tùy chọn mới
+        # Áp dụng config mới tự động điền 'yes'
         make olddefconfig
 
         # Bắt đầu compile
@@ -102,7 +107,6 @@ jobs:
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
         
-        # Copy file boot image đã build xong
         if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
           cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         elif [ -f kernel/arch/arm64/boot/Image ]; then
