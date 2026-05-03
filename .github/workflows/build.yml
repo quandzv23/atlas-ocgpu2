@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL STABLE)
+name: Build A21s Kernel (NO-FAIL CCACHE)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 🔥 INSTALL TOOLCHAIN
+    # 🔥 CÀI TOOLCHAIN
     - name: Install deps
       run: |
         sudo apt update
@@ -21,13 +21,23 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
+    # 🔥 DIỆT CCACHE TỪ GỐC
+    - name: Kill ccache completely
+      run: |
+        sudo apt purge -y ccache || true
+        sudo rm -rf /usr/bin/ccache || true
+        sudo rm -rf /usr/lib/ccache || true
+
+        # 🔥 fake ccache = gcc (ultimate fallback)
+        sudo ln -sf /usr/bin/gcc /usr/bin/ccache
+
     # 🔥 CLONE KERNEL
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 ADD KERNELSU (ĐÚNG STRUCTURE)
+    # 🔥 ADD KERNELSU CHUẨN
     - name: Add KernelSU
       run: |
         cd kernel
@@ -43,7 +53,7 @@ jobs:
 
         test -f drivers/kernelsu/Kconfig || exit 1
 
-    # 🔥 FIX SAMSUNG CHECK
+    # 🔥 FIX TOOLCHAIN CHECK SAMSUNG
     - name: Fix toolchain check
       run: |
         cd kernel
@@ -51,22 +61,13 @@ jobs:
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts || true
 
-    # 🔥 KILL CCACHE TRIỆT ĐỂ
-    - name: Remove ccache
+    # 🔥 XÓA CCACHE TRONG SOURCE
+    - name: Remove ccache from source
       run: |
         cd kernel
-
-        # remove trong Makefile
         find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
 
-        # override env
-        echo "CC=clang" >> $GITHUB_ENV
-        echo "HOSTCC=gcc" >> $GITHUB_ENV
-        echo "HOSTCXX=g++" >> $GITHUB_ENV
-
-        unalias ccache 2>/dev/null || true
-
-    # 🔥 BUILD
+    # 🔥 BUILD (OVERRIDE TRIỆT ĐỂ)
     - name: Build kernel
       run: |
         cd kernel
@@ -74,13 +75,13 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
 
+        # 🔥 override compiler tuyệt đối
         export CC=clang
         export HOSTCC=gcc
         export HOSTCXX=g++
 
         make exynos850-a21snsxx_defconfig
 
-        # chỉ bật KSU (không phá config boot)
         scripts/config --enable KSU || true
 
         yes "" | make olddefconfig
@@ -105,8 +106,6 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
-
-        # set device
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
         zip -r ../A21s-Kernel-KSU.zip *
