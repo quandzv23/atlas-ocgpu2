@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FINAL NO-CCACHE-FAIL)
+name: Build A21s Kernel (FINAL-KSU-FIXED)
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # 🔥 FIX CCACHE TRIỆT ĐỂ
+    # 🔥 FIX CCACHE
     - name: Fix ccache wrapper
       run: |
         sudo mkdir -p /usr/local/bin
@@ -37,16 +37,27 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Add KernelSU
+    # 🔥 Add KernelSU & FIX Header
     - name: Add KernelSU
       run: |
         cd kernel
         rm -rf drivers/kernelsu
+        
+        # Tải KernelSU
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
         mv KernelSU-*/kernel drivers/kernelsu
         
-        # Thêm vào Kconfig nếu chưa có
+        # [FIX 1] Định nghĩa VERSION để tránh lỗi Git Version
+        cd drivers/kernelsu
+        echo "ccflags-y += -DKSU_VERSION=11950" > VERSION
+        cd ../..
+
+        # [FIX 2] Sửa lỗi 'uapi/app_profile.h' not found quan trọng nhất
+        # Thêm đường dẫn include vào file Kbuild
+        sed -i 's|ccflags-y += -I$(srctree)/$(src)|ccflags-y += -I$(srctree)/$(src) -I$(srctree)/$(src)/uapi|g' drivers/kernelsu/Kbuild
+
+        # Thêm vào Kconfig
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
@@ -54,9 +65,7 @@ jobs:
     - name: Fix Permissions and Scripts
       run: |
         cd kernel
-        # Cấp quyền cho scripts/config để không bị Permission denied
         chmod +x scripts/config
-        # Fix toolchain check Samsung
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
 
@@ -70,19 +79,19 @@ jobs:
         export KBUILD_BUILD_USER="Gemini"
         export KBUILD_BUILD_HOST="Github-Actions"
 
-        # 1. Tạo config mặc định
+        # Config mặc định
         make exynos850-a21snsxx_defconfig
 
-        # 2. Bật KernelSU qua scripts/config (đã có quyền thực thi ở bước trên)
+        # Bật các module cần thiết cho KSU
         ./scripts/config --enable KSU
         ./scripts/config --enable KPROBES
         ./scripts/config --enable OVERLAY_FS
+        ./scripts/config --enable KPROBE_EVENTS
 
-        # 3. Áp dụng các thay đổi và tự động chọn default cho option mới
-        # Cách này thay thế cho 'yes "" | make oldconfig' để tránh lỗi EOF
+        # Áp dụng config mới
         make olddefconfig
 
-        # 4. Compile
+        # Bắt đầu compile
         make -j$(nproc) \
           CC=clang \
           HOSTCC=gcc \
@@ -98,7 +107,7 @@ jobs:
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
         
-        # Kiểm tra Image.gz-dtb hoặc Image để copy
+        # Copy file boot image đã build xong
         if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
           cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         elif [ -f kernel/arch/arm64/boot/Image ]; then
