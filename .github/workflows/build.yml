@@ -89,7 +89,10 @@ jobs:
           HOSTCXX=g++ \
           LD=ld.lld \
           CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          KCFLAGS="-gdwarf-4" \
+          HOSTCFLAGS="-gdwarf-4"
+          
 
     # 📦 Pack flash zip
     - name: Pack AnyKernel3
