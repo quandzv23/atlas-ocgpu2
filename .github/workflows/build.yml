@@ -1,4 +1,4 @@
-name: Build A21s Kernel (CLEAN)
+name: Build A21s Kernel (STABLE PASS)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # ✅ Cài toolchain chuẩn
+    # 🔧 Cài toolchain chuẩn
     - name: Install dependencies
       run: |
         sudo apt update
@@ -22,7 +22,7 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # ✅ Kiểm tra gcc thật sự tồn tại
+    # 🔍 Verify compiler
     - name: Verify toolchain
       run: |
         which gcc
@@ -30,26 +30,25 @@ jobs:
         which clang
         clang --version
 
-    # ✅ Clone kernel sạch
+    # 📦 Clone kernel
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # ✅ Thêm KernelSU đúng cách (không lỗi Kconfig)
+    # 🔐 Add KernelSU (chuẩn, không lỗi Kconfig)
     - name: Add KernelSU
       run: |
         cd kernel
-
         rm -rf drivers/kernelsu
-
         git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu
 
-        # đảm bảo Kconfig được include
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-    # ✅ Bypass check toolchain Samsung (cách chuẩn, không hack linh tinh)
+        test -f drivers/kernelsu/Kconfig
+
+    # 🧠 Bypass check toolchain Samsung
     - name: Fix Samsung toolchain check
       run: |
         cd kernel
@@ -58,13 +57,20 @@ jobs:
           chmod +x scripts/min-tool-version.sh
         fi
 
-    # ✅ Xóa ccache khỏi source (KHÔNG đụng hệ thống)
-    - name: Remove ccache from source
+    # 💀 Remove ccache khỏi source
+    - name: Remove ccache
       run: |
         cd kernel
         find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
 
-    # ✅ Build chuẩn
+    # 🚫 Clear env ccache
+    - name: Clear ccache env
+      run: |
+        unset CCACHE
+        unset CCACHE_DIR
+        unset CCACHE_BASEDIR
+
+    # 🔥 BUILD (FORCE COMPILER - QUAN TRỌNG NHẤT)
     - name: Build kernel
       run: |
         cd kernel
@@ -74,7 +80,6 @@ jobs:
 
         make exynos850-a21snsxx_defconfig
 
-        # bật KernelSU
         scripts/config --enable KSU || true
 
         yes "" | make olddefconfig
@@ -87,8 +92,8 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # ✅ Pack flash zip
-    - name: Pack AnyKernel3
+    # 📦 Pack AnyKernel3
+    - name: Pack flashable zip
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
 
@@ -96,14 +101,12 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
-
-        # set device đúng
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
-        zip -r ../A21s-Kernel-CLEAN.zip *
+        zip -r ../A21s-Kernel.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-CLEAN
-        path: A21s-Kernel-CLEAN.zip
+        name: A21s-Kernel
+        path: A21s-Kernel.zip
