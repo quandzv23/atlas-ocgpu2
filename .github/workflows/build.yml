@@ -1,4 +1,4 @@
-name: Build A21s Kernel (FULL - KernelSU)
+name: Build Kernel A21s
 
 on:
   workflow_dispatch:
@@ -11,35 +11,34 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 🔥 Dọn disk (tránh full storage)
-    - name: Free disk
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo apt clean
-
-    # 🔥 Cài dependencies
-    - name: Install deps
+    - name: Setup deps
       run: |
         sudo apt update
         sudo apt install -y \
-          build-essential \
-          bc bison flex \
-          libssl-dev libelf-dev \
-          gcc g++ \
-          clang lld \
-          make python3
+          git bc bison flex libssl-dev make libc6-dev \
+          libncurses5-dev libelf-dev gcc g++ \
+          binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
 
-    # 🔥 Clone kernel
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Clone clang nhẹ
-    - name: Clone clang
+    - name: Clone clang (NHẸ + KHÔNG FULL)
       run: |
         git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
+
+    - name: Fix môi trường
+      run: |
+        # 🔥 Fix lỗi linker clang dùng nhầm ld
+        ln -sf /usr/bin/ld.lld clang/bin/ld
+
+        # 🔥 Fix fake gcc (tránh lỗi cannot find gcc)
+        echo -e '#!/bin/bash\nexec clang "$@"' > clang/bin/gcc
+        chmod +x clang/bin/gcc
+
+        # 🔥 Disable ccache hoàn toàn
+        export USE_CCACHE=0
 
     - name: Build kernel
       run: |
@@ -47,59 +46,40 @@ jobs:
 
         export ARCH=arm64
         export SUBARCH=arm64
-
-        # 🔥 fake ccache (fix lỗi 127)
-        mkdir -p fakebin
-        cat << 'EOF' > fakebin/ccache
-        #!/bin/bash
-        exec "$@"
-        EOF
-        chmod +x fakebin/ccache
-        export PATH=$PWD/fakebin:$PATH
-
-        # 🔥 giữ gcc hệ thống + thêm clang
-        export PATH=/usr/bin:$PATH
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-        # 🔥 fix clang/assembler
-        export LLVM=1
-        export LLVM_IAS=1
-
-        # 🔥 FIX KernelSU (QUAN TRỌNG)
-        git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu
-
-        # 🔥 config
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 tắt vdso đúng cách
-        echo "CONFIG_VDSO=n" >> .config
-        echo "CONFIG_COMPAT_VDSO=n" >> .config
+        # 🔥 Disable VDSO (Cách 1 - chuẩn)
+        scripts/config --disable VDSO || true
+        scripts/config --disable COMPAT_VDSO || true
 
-        # 🔥 tránh interactive
+        # 🔥 Fix interactive
         yes "" | make olddefconfig
 
-        # 🔥 fake vdso (repo thiếu)
-        mkdir -p arch/arm64/kernel/vdso
-        touch arch/arm64/kernel/vdso/vdso.lds
-        touch arch/arm64/kernel/vdso/vdso.so.dbg
-
-        # 🔥 build
         make -j$(nproc) \
           CC=clang \
-          HOSTCC=gcc \
-          HOSTCXX=g++ \
           LD=ld.lld \
           AR=llvm-ar \
           NM=llvm-nm \
           OBJCOPY=llvm-objcopy \
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
+          HOSTCC=gcc \
+          HOSTCXX=g++ \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 🔥 Upload kernel
-    - name: Upload Image
+    - name: Pack AnyKernel3 (flash OrangeFox)
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3
+        cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+
+        cd AnyKernel3
+        zip -r ../A21s-Kernel.zip *
+
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: kernel-image
-        path: kernel/arch/arm64/boot/Image
+        name: A21s-Kernel
+        path: A21s-Kernel.zip
