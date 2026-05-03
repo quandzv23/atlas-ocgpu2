@@ -1,4 +1,4 @@
-name: Build A21s Kernel (V10 DAILY)
+name: Build A21s Kernel (FINAL STABLE)
 
 on:
   workflow_dispatch:
@@ -10,24 +10,25 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # 🔥 INSTALL TOOLCHAIN
     - name: Install deps
       run: |
         sudo apt update
         sudo apt install -y \
           git curl bc bison flex libssl-dev make \
           libc6-dev libncurses5-dev libelf-dev \
-          gcc g++ \
-          clang lld llvm \
+          gcc g++ clang lld llvm \
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
+    # 🔥 CLONE KERNEL
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 KernelSU chuẩn
-    - name: Add KernelSU (REAL)
+    # 🔥 ADD KERNELSU (ĐÚNG STRUCTURE)
+    - name: Add KernelSU
       run: |
         cd kernel
         rm -rf drivers/kernelsu
@@ -42,21 +43,30 @@ jobs:
 
         test -f drivers/kernelsu/Kconfig || exit 1
 
-    # 🔥 FIX TOOLCHAIN CHECK
-    - name: Fix Samsung checks
+    # 🔥 FIX SAMSUNG CHECK
+    - name: Fix toolchain check
       run: |
         cd kernel
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts || true
 
-    # 🔥 REMOVE CCACHE TRIỆT ĐỂ
+    # 🔥 KILL CCACHE TRIỆT ĐỂ
     - name: Remove ccache
       run: |
         cd kernel
+
+        # remove trong Makefile
         find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
 
-    # 🔥 BUILD (SAFE CONFIG)
+        # override env
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "HOSTCC=gcc" >> $GITHUB_ENV
+        echo "HOSTCXX=g++" >> $GITHUB_ENV
+
+        unalias ccache 2>/dev/null || true
+
+    # 🔥 BUILD
     - name: Build kernel
       run: |
         cd kernel
@@ -64,15 +74,14 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
 
+        export CC=clang
+        export HOSTCC=gcc
+        export HOSTCXX=g++
+
         make exynos850-a21snsxx_defconfig
 
-        # bật KernelSU
+        # chỉ bật KSU (không phá config boot)
         scripts/config --enable KSU || true
-
-        # ⚠️ GIỮ NGUYÊN CONFIG QUAN TRỌNG (để boot ổn định)
-        # KHÔNG đụng VDSO
-        # KHÔNG OC
-        # KHÔNG tweak deep
 
         yes "" | make olddefconfig
 
@@ -85,11 +94,9 @@ jobs:
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
           HOSTCC=gcc \
-          HOSTCXX=g++ \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          HOSTCXX=g++
 
-    # 🔥 PACK FLASH ZIP (chuẩn OrangeFox)
+    # 🔥 PACK FLASH ZIP
     - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
@@ -99,13 +106,13 @@ jobs:
 
         cd AnyKernel3
 
-        # set device name cho an toàn
+        # set device
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
-        zip -r ../A21s-Kernel-KSU-V10.zip *
+        zip -r ../A21s-Kernel-KSU.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU-V10
-        path: A21s-Kernel-KSU-V10.zip
+        name: A21s-Kernel-KSU
+        path: A21s-Kernel-KSU.zip
