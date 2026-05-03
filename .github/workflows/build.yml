@@ -1,4 +1,4 @@
-name: Build A21s Kernel (V8 STABLE)
+name: Build A21s Kernel (V9 FINAL)
 
 on:
   workflow_dispatch:
@@ -26,34 +26,31 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 KernelSU bằng tarball (anti-fail)
-    - name: Add KernelSU (tarball + retry)
+    # 🔥 KernelSU chuẩn (đúng structure)
+    - name: Add KernelSU (REAL FIXED)
       run: |
         cd kernel
         rm -rf drivers/kernelsu
 
-        for i in 1 2 3; do
-          echo "Download attempt $i"
-          curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz && break
-          sleep 2
-        done
-
-        if [ ! -f ksu.tar.gz ]; then
-          echo "❌ KernelSU download failed"
-          exit 1
-        fi
-
+        curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
-        mv KernelSU-* drivers/kernelsu
 
+        # ✅ đúng cấu trúc
+        mv KernelSU-*/kernel drivers/kernelsu
+
+        # add vào drivers/Kconfig nếu thiếu
+        grep -q "kernelsu/Kconfig" drivers/Kconfig || \
+        echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+
+        # verify
         if [ ! -f drivers/kernelsu/Kconfig ]; then
-          echo "❌ KernelSU invalid"
+          echo "❌ KernelSU lỗi"
           exit 1
         fi
 
-        echo "✅ KernelSU ready"
+        echo "✅ KernelSU OK"
 
-    # 🔥 bypass Samsung toolchain check
+    # 🔥 bypass check ngu của samsung
     - name: Fix toolchain check
       run: |
         cd kernel
@@ -61,7 +58,7 @@ jobs:
         chmod +x scripts/min-tool-version.sh
         chmod -R +x scripts || true
 
-    # 🔥 BUILD
+    # 🔥 BUILD (an toàn, không phá vdso)
     - name: Build kernel
       run: |
         cd kernel
@@ -74,9 +71,8 @@ jobs:
         # bật KernelSU
         scripts/config --enable KSU || true
 
-        # fix VDSO
-        scripts/config --disable VDSO || true
-        scripts/config --disable COMPAT_VDSO || true
+        # ⚠️ KHÔNG disable VDSO nữa (gây lỗi thiếu file)
+        # scripts/config --disable VDSO ❌
 
         yes "" | make olddefconfig
 
@@ -93,7 +89,7 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 🔥 pack flash
+    # 🔥 PACK ZIP FLASH (OrangeFox OK)
     - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
@@ -102,10 +98,10 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
-        zip -r ../A21s-Kernel-KSU-V8.zip *
+        zip -r ../A21s-Kernel-KSU-V9.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU-V8
-        path: A21s-Kernel-KSU-V8.zip
+        name: A21s-Kernel-KSU-V9
+        path: A21s-Kernel-KSU-V9.zip
