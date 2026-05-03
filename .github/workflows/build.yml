@@ -22,22 +22,14 @@ jobs:
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # 🔥 FIX CCACHE TRIỆT ĐỂ (QUAN TRỌNG NHẤT)
+    # 🔥 FIX CCACHE TRIỆT ĐỂ
     - name: Fix ccache wrapper
       run: |
         sudo mkdir -p /usr/local/bin
-
-        # tạo wrapper ccache đúng chuẩn
         echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
         echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
-
         sudo chmod +x /usr/local/bin/ccache
-
-        # ưu tiên PATH
         echo "/usr/local/bin" >> $GITHUB_PATH
-
-        which ccache
-        ccache gcc --version || true
 
     # 📦 Clone kernel
     - name: Clone kernel
@@ -45,27 +37,26 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 Add KernelSU (tarball ổn định)
+    # 🔥 Add KernelSU
     - name: Add KernelSU
       run: |
         cd kernel
-
         rm -rf drivers/kernelsu
-
         curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
         tar -xzf ksu.tar.gz
-
         mv KernelSU-*/kernel drivers/kernelsu
-
+        
+        # Thêm vào Kconfig nếu chưa có
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-        test -f drivers/kernelsu/Kconfig
-
-    # 🔧 Fix toolchain check Samsung
-    - name: Fix toolchain check
+    # 🔧 Fix toolchain check & Permissions
+    - name: Fix Permissions and Scripts
       run: |
         cd kernel
+        # Cấp quyền cho scripts/config để không bị Permission denied
+        chmod +x scripts/config
+        # Fix toolchain check Samsung
         echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
         chmod +x scripts/min-tool-version.sh
 
@@ -76,13 +67,22 @@ jobs:
 
         export ARCH=arm64
         export SUBARCH=arm64
+        export KBUILD_BUILD_USER="Gemini"
+        export KBUILD_BUILD_HOST="Github-Actions"
 
+        # 1. Tạo config mặc định
         make exynos850-a21snsxx_defconfig
 
-        scripts/config --enable KSU || true
+        # 2. Bật KernelSU qua scripts/config (đã có quyền thực thi ở bước trên)
+        ./scripts/config --enable KSU
+        ./scripts/config --enable KPROBES
+        ./scripts/config --enable OVERLAY_FS
 
-        yes "" | make olddefconfig
+        # 3. Áp dụng các thay đổi và tự động chọn default cho option mới
+        # Cách này thay thế cho 'yes "" | make oldconfig' để tránh lỗi EOF
+        make olddefconfig
 
+        # 4. Compile
         make -j$(nproc) \
           CC=clang \
           HOSTCC=gcc \
@@ -92,19 +92,21 @@ jobs:
           CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
           KCFLAGS="-gdwarf-4" \
           HOSTCFLAGS="-gdwarf-4"
-          
 
     # 📦 Pack flash zip
     - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
-
-        cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null || true
-        cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
+        
+        # Kiểm tra Image.gz-dtb hoặc Image để copy
+        if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
+          cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        elif [ -f kernel/arch/arm64/boot/Image ]; then
+          cp kernel/arch/arm64/boot/Image AnyKernel3/
+        fi
 
         cd AnyKernel3
-        sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
-
+        sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh
         zip -r ../A21s-Kernel-KSU.zip *
 
     - name: Upload
