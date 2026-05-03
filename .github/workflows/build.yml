@@ -1,4 +1,4 @@
-name: Build Kernel A21s
+name: Build A21s Kernel (Clean Auto)
 
 on:
   workflow_dispatch:
@@ -15,30 +15,46 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y \
-          git bc bison flex libssl-dev make libc6-dev \
-          libncurses5-dev libelf-dev gcc g++ \
-          binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+          git bc bison flex libssl-dev make \
+          libc6-dev libncurses5-dev libelf-dev \
+          gcc g++ \
+          binutils-aarch64-linux-gnu \
+          binutils-arm-linux-gnueabi
 
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: Clone clang (NHẸ + KHÔNG FULL)
+    - name: Clone Clang (auto)
       run: |
         git clone --depth=1 https://github.com/ZyCromerZ/Clang clang
 
-    - name: Fix môi trường
+    - name: Setup Clang ENV (AUTO DETECT)
       run: |
-        # 🔥 Fix lỗi linker clang dùng nhầm ld
-        ln -sf /usr/bin/ld.lld clang/bin/ld
+        # 🔥 tìm clang/bin thật
+        CLANG_BIN=$(find $GITHUB_WORKSPACE/clang -type d -name bin | head -n 1)
 
-        # 🔥 Fix fake gcc (tránh lỗi cannot find gcc)
-        echo -e '#!/bin/bash\nexec clang "$@"' > clang/bin/gcc
-        chmod +x clang/bin/gcc
+        if [ -z "$CLANG_BIN" ]; then
+          echo "❌ Không tìm thấy clang bin"
+          exit 1
+        fi
 
-        # 🔥 Disable ccache hoàn toàn
-        export USE_CCACHE=0
+        echo "✅ CLANG_BIN=$CLANG_BIN"
+
+        # 🔥 fix linker (tránh lỗi libc)
+        ln -sf /usr/bin/ld.lld $CLANG_BIN/ld
+
+        # 🔥 fake gcc (fix cannot find gcc)
+        echo -e '#!/bin/bash\nexec clang "$@"' > $CLANG_BIN/gcc
+        chmod +x $CLANG_BIN/gcc
+
+        # 🔥 disable ccache
+        echo "USE_CCACHE=0" >> $GITHUB_ENV
+
+        # 🔥 export PATH
+        echo "CLANG_BIN=$CLANG_BIN" >> $GITHUB_ENV
+        echo "$CLANG_BIN" >> $GITHUB_PATH
 
     - name: Build kernel
       run: |
@@ -46,15 +62,14 @@ jobs:
 
         export ARCH=arm64
         export SUBARCH=arm64
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 Disable VDSO (Cách 1 - chuẩn)
+        # 🔥 disable VDSO (fix thiếu vdso.lds)
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
-        # 🔥 Fix interactive
+        # 🔥 auto config (no interactive)
         yes "" | make olddefconfig
 
         make -j$(nproc) \
@@ -70,10 +85,12 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Pack AnyKernel3 (flash OrangeFox)
+    - name: Pack AnyKernel3 (Flash OrangeFox)
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
-        cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+
+        cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || true
+        cp kernel/arch/arm64/boot/Image AnyKernel3/ || true
 
         cd AnyKernel3
         zip -r ../A21s-Kernel.zip *
