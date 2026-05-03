@@ -1,4 +1,4 @@
-name: Build A21s Kernel (Stable)
+name: Build A21s Kernel (FINAL STABLE)
 
 on:
   workflow_dispatch:
@@ -8,8 +8,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Setup deps
       run: |
@@ -26,19 +25,13 @@ jobs:
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    - name: Clone Clang PREBUILT (NHẸ + CHẮC)
+    - name: Clone Proton Clang (BEST)
       run: |
-        git clone --depth=1 https://github.com/Neutron-Toolchains/clang clang
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
     - name: Setup ENV
       run: |
-        # ✅ Clang chuẩn luôn có bin
-        export CLANG_PATH=$GITHUB_WORKSPACE/clang/bin
-
-        echo "CLANG_PATH=$CLANG_PATH" >> $GITHUB_ENV
-        echo "$CLANG_PATH" >> $GITHUB_PATH
-
-        # ❌ tắt ccache hoàn toàn
+        echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
         echo "USE_CCACHE=0" >> $GITHUB_ENV
 
     - name: Build kernel
@@ -47,11 +40,10 @@ jobs:
 
         export ARCH=arm64
         export SUBARCH=arm64
-        export PATH=$CLANG_PATH:$PATH
 
         make exynos850-a21snsxx_defconfig
 
-        # 🔥 Fix VDSO (lỗi repo atlas)
+        # 🔥 Fix VDSO
         scripts/config --disable VDSO || true
         scripts/config --disable COMPAT_VDSO || true
 
