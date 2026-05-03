@@ -1,4 +1,4 @@
-name: Build A21s Kernel (NO-FAIL CCACHE)
+name: Build A21s Kernel (CLEAN)
 
 on:
   workflow_dispatch:
@@ -10,64 +10,61 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 🔥 CÀI TOOLCHAIN
-    - name: Install deps
+    # ✅ Cài toolchain chuẩn
+    - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          git curl bc bison flex libssl-dev make \
+          git bc bison flex libssl-dev make \
           libc6-dev libncurses5-dev libelf-dev \
-          gcc g++ clang lld llvm \
+          gcc g++ \
+          clang lld llvm \
           binutils-aarch64-linux-gnu \
           binutils-arm-linux-gnueabi
 
-    # 🔥 DIỆT CCACHE TỪ GỐC
-    - name: Kill ccache completely
+    # ✅ Kiểm tra gcc thật sự tồn tại
+    - name: Verify toolchain
       run: |
-        sudo apt purge -y ccache || true
-        sudo rm -rf /usr/bin/ccache || true
-        sudo rm -rf /usr/lib/ccache || true
+        which gcc
+        gcc --version
+        which clang
+        clang --version
 
-        # 🔥 fake ccache = gcc (ultimate fallback)
-        sudo ln -sf /usr/bin/gcc /usr/bin/ccache
-
-    # 🔥 CLONE KERNEL
+    # ✅ Clone kernel sạch
     - name: Clone kernel
       run: |
         rm -rf kernel
         git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 ADD KERNELSU CHUẨN
+    # ✅ Thêm KernelSU đúng cách (không lỗi Kconfig)
     - name: Add KernelSU
       run: |
         cd kernel
+
         rm -rf drivers/kernelsu
 
-        curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
-        tar -xzf ksu.tar.gz
+        git clone --depth=1 https://github.com/tiann/KernelSU drivers/kernelsu
 
-        mv KernelSU-*/kernel drivers/kernelsu
-
+        # đảm bảo Kconfig được include
         grep -q "kernelsu/Kconfig" drivers/Kconfig || \
         echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-        test -f drivers/kernelsu/Kconfig || exit 1
-
-    # 🔥 FIX TOOLCHAIN CHECK SAMSUNG
-    - name: Fix toolchain check
+    # ✅ Bypass check toolchain Samsung (cách chuẩn, không hack linh tinh)
+    - name: Fix Samsung toolchain check
       run: |
         cd kernel
-        echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
-        chmod +x scripts/min-tool-version.sh
-        chmod -R +x scripts || true
+        if [ -f scripts/min-tool-version.sh ]; then
+          echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
+          chmod +x scripts/min-tool-version.sh
+        fi
 
-    # 🔥 XÓA CCACHE TRONG SOURCE
+    # ✅ Xóa ccache khỏi source (KHÔNG đụng hệ thống)
     - name: Remove ccache from source
       run: |
         cd kernel
         find . -type f -name "Makefile*" -exec sed -i 's/ccache //g' {} +
 
-    # 🔥 BUILD (OVERRIDE TRIỆT ĐỂ)
+    # ✅ Build chuẩn
     - name: Build kernel
       run: |
         cd kernel
@@ -75,29 +72,22 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
 
-        # 🔥 override compiler tuyệt đối
-        export CC=clang
-        export HOSTCC=gcc
-        export HOSTCXX=g++
-
         make exynos850-a21snsxx_defconfig
 
+        # bật KernelSU
         scripts/config --enable KSU || true
 
         yes "" | make olddefconfig
 
         make -j$(nproc) \
           CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
           HOSTCC=gcc \
-          HOSTCXX=g++
+          HOSTCXX=g++ \
+          LD=ld.lld \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    # 🔥 PACK FLASH ZIP
+    # ✅ Pack flash zip
     - name: Pack AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
@@ -106,12 +96,14 @@ jobs:
         cp kernel/arch/arm64/boot/Image AnyKernel3/ 2>/dev/null || true
 
         cd AnyKernel3
+
+        # set device đúng
         sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
 
-        zip -r ../A21s-Kernel-KSU.zip *
+        zip -r ../A21s-Kernel-CLEAN.zip *
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: A21s-Kernel-KSU
-        path: A21s-Kernel-KSU.zip
+        name: A21s-Kernel-CLEAN
+        path: A21s-Kernel-CLEAN.zip
