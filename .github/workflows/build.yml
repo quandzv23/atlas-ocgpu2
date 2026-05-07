@@ -68,6 +68,12 @@ jobs:
 
           test -f drivers/kernelsu/Kconfig
 
+          # 🔥 FIX UAPI HEADERS
+          mkdir -p include/uapi
+
+          cp -r drivers/kernelsu/userspace/include/uapi/* \
+            include/uapi/ || true
+
       # 🔥 Fix scripts
       - name: Fix scripts
         run: |
