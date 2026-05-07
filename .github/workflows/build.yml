@@ -1,124 +1,129 @@
 name: Build A21s Kernel (FINAL-KSU-FIXED)
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+build:
+runs-on: ubuntu-22.04
 
-    steps:
-    - uses: actions/checkout@v4
+```
+steps:
+- uses: actions/checkout@v4
 
-    # 🔧 Toolchain chuẩn
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git curl bc bison flex libssl-dev make \
-          libc6-dev libncurses5-dev libelf-dev \
-          gcc g++ \
-          clang lld llvm \
-          binutils-aarch64-linux-gnu \
-          binutils-arm-linux-gnueabi
+# 🔧 Toolchain chuẩn
+- name: Install dependencies
+  run: |
+    sudo apt update
+    sudo apt install -y \
+      git curl bc bison flex libssl-dev make \
+      libc6-dev libncurses5-dev libelf-dev \
+      gcc g++ \
+      clang lld llvm
 
-    # 🔥 FIX CCACHE
-    - name: Fix ccache wrapper
-      run: |
-        sudo mkdir -p /usr/local/bin
-        echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
-        echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
-        sudo chmod +x /usr/local/bin/ccache
-        echo "/usr/local/bin" >> $GITHUB_PATH
+# 🔥 FIX CCACHE
+- name: Fix ccache wrapper
+  run: |
+    sudo mkdir -p /usr/local/bin
 
-    # 📦 Clone kernel
-    - name: Clone kernel
-      run: |
-        rm -rf kernel
-        git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
+    echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
+    echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
 
-    # 🔥 Add KernelSU
-    - name: Add KernelSU
-      run: |
-        cd kernel
-        rm -rf drivers/kernelsu
-        
-        # Tải KernelSU
-        curl -L https://github.com/tiann/KernelSU/archive/refs/heads/main.tar.gz -o ksu.tar.gz
-        tar -xzf ksu.tar.gz
-        mv KernelSU-*/kernel drivers/kernelsu
-        
-        # [GIẢI PHÁP TỐI THƯỢNG CHO INCLUDE LỖI] 
-        # Copy thẳng thư mục uapi của KSU vào thư mục include/ gốc của Kernel
-        # Đảm bảo lệnh #include "uapi/app_profile.h" chạy thành công ở bất kỳ đâu
-        cp -r drivers/kernelsu/uapi/* include/uapi/ || true
+    sudo chmod +x /usr/local/bin/ccache
 
-        # Thêm vào Kconfig
-        grep -q "kernelsu/Kconfig" drivers/Kconfig || \
-        echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+    echo "/usr/local/bin" >> $GITHUB_PATH
 
-    # 🔧 Fix toolchain check & Permissions
-    - name: Fix Permissions and Scripts
-      run: |
-        cd kernel
-        chmod +x scripts/config
-        echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
-        chmod +x scripts/min-tool-version.sh
+# 📦 Clone kernel
+- name: Clone kernel
+  run: |
+    rm -rf kernel
+    git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
 
-    # 🔥 BUILD
-    - name: Build kernel
-      run: |
-        cd kernel
+# 🔥 Add KernelSU (LEGACY STABLE)
+- name: Add KernelSU
+  run: |
+    cd kernel
 
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export KBUILD_BUILD_USER="Gemini"
-        export KBUILD_BUILD_HOST="Github-Actions"
-        
-        # [FIX LỖI KSU_VERSION Redefined] 
-        # Cung cấp biến môi trường trực tiếp thay vì chèn vào Kbuild
-        export KSU_GIT_VERSION="11950"
+    rm -rf drivers/kernelsu
 
-        # Config mặc định
-        make exynos850-a21snsxx_defconfig
+    # 🔥 dùng bản ổn định cho kernel Samsung cũ
+    curl -L https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz -o ksu.tar.gz
 
-        # Bật các module cần thiết cho KSU
-        ./scripts/config --enable KSU
-        ./scripts/config --enable KPROBES
-        ./scripts/config --enable OVERLAY_FS
-        ./scripts/config --enable KPROBE_EVENTS
+    tar -xzf ksu.tar.gz
 
-        # Áp dụng config mới tự động điền 'yes'
-        make olddefconfig
+    mv KernelSU-*/kernel drivers/kernelsu
 
-        # Bắt đầu compile
-        make -j$(nproc) \
-          CC=clang \
-          HOSTCC=gcc \
-          HOSTCXX=g++ \
-          LD=ld.lld \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          KCFLAGS="-gdwarf-4" \
-          HOSTCFLAGS="-gdwarf-4"
+    # inject Kconfig
+    grep -q "kernelsu/Kconfig" drivers/Kconfig || \
+    echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-    # 📦 Pack flash zip
-    - name: Pack AnyKernel3
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3
-        
-        if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
-          cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        elif [ -f kernel/arch/arm64/boot/Image ]; then
-          cp kernel/arch/arm64/boot/Image AnyKernel3/
-        fi
+    # verify
+    test -f drivers/kernelsu/Kconfig
 
-        cd AnyKernel3
-        sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh
-        zip -r ../A21s-Kernel-KSU.zip *
+# 🔧 Fix toolchain check & permissions
+- name: Fix scripts
+  run: |
+    cd kernel
 
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: A21s-Kernel-KSU
-        path: A21s-Kernel-KSU.zip
+    chmod +x scripts/config || true
+
+    echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
+    chmod +x scripts/min-tool-version.sh
+
+# 🔥 BUILD
+- name: Build kernel
+  run: |
+    cd kernel
+
+    export ARCH=arm64
+    export SUBARCH=arm64
+
+    export KBUILD_BUILD_USER="Gemini"
+    export KBUILD_BUILD_HOST="Github-Actions"
+
+    # fix KSU version warning
+    export KSU_GIT_VERSION="v0.9.5"
+
+    make exynos850-a21snsxx_defconfig
+
+    # enable KSU
+    ./scripts/config --enable KSU || true
+
+    # modules cần cho KSU
+    ./scripts/config --enable KPROBES || true
+    ./scripts/config --enable OVERLAY_FS || true
+    ./scripts/config --enable KPROBE_EVENTS || true
+
+    yes "" | make olddefconfig
+
+    # 🔥 LLVM FULL
+    make -j$(nproc) \
+      LLVM=1 \
+      LLVM_IAS=1 \
+      CC=clang \
+      HOSTCC=gcc \
+      HOSTCXX=g++
+
+# 📦 Pack flash zip
+- name: Pack AnyKernel3
+  run: |
+    git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+
+    if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
+      cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+    elif [ -f kernel/arch/arm64/boot/Image ]; then
+      cp kernel/arch/arm64/boot/Image AnyKernel3/
+    fi
+
+    cd AnyKernel3
+
+    sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
+
+    zip -r ../A21s-Kernel-KSU.zip *
+
+- name: Upload
+  uses: actions/upload-artifact@v4
+  with:
+    name: A21s-Kernel-KSU
+    path: A21s-Kernel-KSU.zip
+```
