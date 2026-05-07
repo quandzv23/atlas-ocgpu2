@@ -1,112 +1,132 @@
 name: Build A21s Kernel
 
 on:
- workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
- build:
-  runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-22.04
 
-  steps:
-  - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: |
-      sudo apt update
-      sudo apt install -y \
-        git curl bc bison flex libssl-dev make \
-        libc6-dev libncurses5-dev libelf-dev \
-        gcc g++ \
-        clang lld llvm
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git curl bc bison flex zip unzip \
+            libssl-dev make \
+            libc6-dev libncurses5-dev libelf-dev \
+            gcc g++ \
+            clang lld llvm
 
-  - name: Fix ccache
-    run: |
-      sudo mkdir -p /usr/local/bin
+      - name: Fix ccache
+        run: |
+          sudo mkdir -p /usr/local/bin
 
-      echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
-      echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
+          echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
+          echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
 
-      sudo chmod +x /usr/local/bin/ccache
+          sudo chmod +x /usr/local/bin/ccache
 
-      echo "/usr/local/bin" >> $GITHUB_PATH
+          echo "/usr/local/bin" >> $GITHUB_PATH
 
-  - name: Clone kernel
-    run: |
-      rm -rf kernel
-      git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
+      - name: Clone kernel
+        run: |
+          rm -rf kernel
 
-  - name: Add KernelSU
-    run: |
-      cd kernel
+          git clone --depth=1 \
+            https://github.com/samsungexynos850/atlas \
+            kernel
 
-      rm -rf drivers/kernelsu
+      # 🔥 KernelSU NEXT (fix undefined symbol)
+      - name: Add KernelSU
+        run: |
+          cd kernel
 
-      curl -L https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz -o ksu.tar.gz
+          rm -rf drivers/kernelsu
 
-      tar -xzf ksu.tar.gz
+          git clone --depth=1 \
+            -b next \
+            https://github.com/tiann/KernelSU \
+            drivers/kernelsu
 
-      mv KernelSU-*/kernel drivers/kernelsu
+          grep -q "kernelsu/Kconfig" drivers/Kconfig || \
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-      grep -q "kernelsu/Kconfig" drivers/Kconfig || \
-      echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          test -f drivers/kernelsu/Kconfig
 
-      test -f drivers/kernelsu/Kconfig
+      - name: Fix scripts
+        run: |
+          cd kernel
 
-  - name: Fix scripts
-    run: |
-      cd kernel
+          chmod +x scripts/config || true
 
-      chmod +x scripts/config || true
+          echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
 
-      echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
+          chmod +x scripts/min-tool-version.sh
 
-      chmod +x scripts/min-tool-version.sh
+      - name: Build kernel
+        run: |
+          cd kernel
 
-  - name: Build kernel
-    run: |
-      cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
 
-      export ARCH=arm64
-      export SUBARCH=arm64
+          export KBUILD_BUILD_USER="Gemini"
+          export KBUILD_BUILD_HOST="Github-Actions"
 
-      export KBUILD_BUILD_USER="Gemini"
-      export KBUILD_BUILD_HOST="Github-Actions"
+          export KSU_GIT_VERSION="NEXT"
 
-      export KSU_GIT_VERSION="v0.9.5"
+          make exynos850-a21snsxx_defconfig
 
-      make exynos850-a21snsxx_defconfig
+          # 🔥 Enable KernelSU
+          ./scripts/config --enable KSU || true
+          ./scripts/config --enable KPROBES || true
+          ./scripts/config --enable KPROBE_EVENTS || true
+          ./scripts/config --enable OVERLAY_FS || true
 
-      ./scripts/config --enable KSU || true
-      ./scripts/config --enable KPROBES || true
-      ./scripts/config --enable OVERLAY_FS || true
-      ./scripts/config --enable KPROBE_EVENTS || true
+          # 🔥 giảm nguy cơ bootloop Samsung
+          ./scripts/config --disable LTO || true
+          ./scripts/config --disable CFI_CLANG || true
 
-      yes "" | make olddefconfig
+          yes "" | make olddefconfig
 
-      make -j$(nproc) \
-        LLVM=1 \
-        CC=clang \
-        HOSTCC=gcc \
-        HOSTCXX=g++
+          make -j$(nproc) \
+            LLVM=1 \
+            CC=clang \
+            HOSTCC=gcc \
+            HOSTCXX=g++
 
-  - name: Pack AnyKernel3
-    run: |
-      git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+      # 🔥 AnyKernel3 flashable for OrangeFox
+      - name: Pack AnyKernel3
+        run: |
+          rm -rf AnyKernel3
 
-      if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
-        cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-      elif [ -f kernel/arch/arm64/boot/Image ]; then
-        cp kernel/arch/arm64/boot/Image AnyKernel3/
-      fi
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3
 
-      cd AnyKernel3
+          if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          elif [ -f kernel/arch/arm64/boot/Image ]; then
+            cp kernel/arch/arm64/boot/Image AnyKernel3/
+          else
+            echo "Kernel image not found!"
+            exit 1
+          fi
 
-      sed -i 's/device.name1=.*/device.name1=a21s/' anykernel.sh || true
+          cd AnyKernel3
 
-      zip -r ../A21s-Kernel-KSU.zip *
+          # 🔥 fix model cho A21s
+          sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-  - name: Upload
-    uses: actions/upload-artifact@v4
-    with:
-      name: A21s-Kernel-KSU
-      path: A21s-Kernel-KSU.zip
+          # 🔥 tránh replace ramdisk nguy hiểm
+          sed -i 's/do\.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
+
+          zip -r9 ../A21s-Kernel-KSU.zip *
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-Kernel-KSU
+          path: A21s-Kernel-KSU.zip
