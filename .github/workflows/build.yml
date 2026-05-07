@@ -10,12 +10,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 🔥 Install deps
       - name: Install dependencies
         run: |
           sudo apt update
 
           sudo apt install -y \
-            git curl bc bison flex zip unzip \
+            git curl wget file \
+            bc bison flex zip unzip \
             libssl-dev make \
             libc6-dev libncurses5-dev libelf-dev \
             gcc g++ \
@@ -51,9 +53,11 @@ jobs:
           rm -rf KernelSU-Next*
 
           # 🔥 stable download
-          curl -L \
-            https://codeload.github.com/KernelSU-Next/KernelSU-Next/tar.gz/refs/heads/main \
-            -o ksu.tar.gz
+          wget -O ksu.tar.gz \
+            https://github.com/rifsxd/KernelSU-Next/archive/refs/heads/next.tar.gz
+
+          # 🔥 verify archive
+          file ksu.tar.gz
 
           tar -xzf ksu.tar.gz
 
@@ -96,7 +100,7 @@ jobs:
           ./scripts/config --enable OVERLAY_FS || true
           ./scripts/config --enable KPROBE_EVENTS || true
 
-          # 🔥 giảm bootloop Samsung
+          # 🔥 reduce Samsung bootloop chance
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
 
@@ -130,11 +134,12 @@ jobs:
           # 🔥 A21s model
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 permissive flash for OrangeFox
+          # 🔥 permissive flash
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
 
+      # 📤 Upload
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
