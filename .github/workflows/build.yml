@@ -13,6 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
+
           sudo apt install -y \
             git curl bc bison flex zip unzip \
             libssl-dev make \
@@ -41,16 +42,22 @@ jobs:
             https://github.com/samsungexynos850/atlas \
             kernel
 
-      # 🔥 KernelSU NEXT FIX
+      # 🔥 Add KernelSU FIXED
       - name: Add KernelSU
         run: |
           cd kernel
 
           rm -rf drivers/kernelsu
+          rm -rf KernelSU-Next*
 
-          git clone --depth=1 \
-            https://github.com/KernelSU-Next/KernelSU-Next \
-            drivers/kernelsu
+          # 🔥 stable download
+          curl -L \
+            https://codeload.github.com/KernelSU-Next/KernelSU-Next/tar.gz/refs/heads/main \
+            -o ksu.tar.gz
+
+          tar -xzf ksu.tar.gz
+
+          mv KernelSU-Next-*/kernel drivers/kernelsu
 
           grep -q "kernelsu/Kconfig" drivers/Kconfig || \
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
@@ -83,13 +90,13 @@ jobs:
 
           make exynos850-a21snsxx_defconfig
 
-          # 🔥 Enable KSU
+          # 🔥 enable KernelSU
           ./scripts/config --enable KSU || true
           ./scripts/config --enable KPROBES || true
           ./scripts/config --enable OVERLAY_FS || true
           ./scripts/config --enable KPROBE_EVENTS || true
 
-          # 🔥 Samsung boot safer
+          # 🔥 giảm bootloop Samsung
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
 
@@ -120,10 +127,10 @@ jobs:
 
           cd AnyKernel3
 
-          # 🔥 model A21s
+          # 🔥 A21s model
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 flash permissive hơn cho OrangeFox
+          # 🔥 permissive flash for OrangeFox
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
