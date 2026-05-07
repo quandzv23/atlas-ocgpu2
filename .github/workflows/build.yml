@@ -20,6 +20,7 @@ jobs:
             gcc g++ \
             clang lld llvm
 
+      # 🔥 FIX CCACHE
       - name: Fix ccache
         run: |
           sudo mkdir -p /usr/local/bin
@@ -31,6 +32,7 @@ jobs:
 
           echo "/usr/local/bin" >> $GITHUB_PATH
 
+      # 📦 Clone kernel
       - name: Clone kernel
         run: |
           rm -rf kernel
@@ -39,7 +41,7 @@ jobs:
             https://github.com/samsungexynos850/atlas \
             kernel
 
-      # 🔥 KernelSU NEXT (fix undefined symbol)
+      # 🔥 KernelSU NEXT FIX
       - name: Add KernelSU
         run: |
           cd kernel
@@ -47,8 +49,7 @@ jobs:
           rm -rf drivers/kernelsu
 
           git clone --depth=1 \
-            -b next \
-            https://github.com/tiann/KernelSU \
+            https://github.com/KernelSU-Next/KernelSU-Next \
             drivers/kernelsu
 
           grep -q "kernelsu/Kconfig" drivers/Kconfig || \
@@ -56,6 +57,7 @@ jobs:
 
           test -f drivers/kernelsu/Kconfig
 
+      # 🔥 Fix scripts
       - name: Fix scripts
         run: |
           cd kernel
@@ -66,6 +68,7 @@ jobs:
 
           chmod +x scripts/min-tool-version.sh
 
+      # 🔥 BUILD
       - name: Build kernel
         run: |
           cd kernel
@@ -80,13 +83,13 @@ jobs:
 
           make exynos850-a21snsxx_defconfig
 
-          # 🔥 Enable KernelSU
+          # 🔥 Enable KSU
           ./scripts/config --enable KSU || true
           ./scripts/config --enable KPROBES || true
-          ./scripts/config --enable KPROBE_EVENTS || true
           ./scripts/config --enable OVERLAY_FS || true
+          ./scripts/config --enable KPROBE_EVENTS || true
 
-          # 🔥 giảm nguy cơ bootloop Samsung
+          # 🔥 Samsung boot safer
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
 
@@ -98,7 +101,7 @@ jobs:
             HOSTCC=gcc \
             HOSTCXX=g++
 
-      # 🔥 AnyKernel3 flashable for OrangeFox
+      # 📦 AnyKernel3 flashable
       - name: Pack AnyKernel3
         run: |
           rm -rf AnyKernel3
@@ -111,17 +114,17 @@ jobs:
           elif [ -f kernel/arch/arm64/boot/Image ]; then
             cp kernel/arch/arm64/boot/Image AnyKernel3/
           else
-            echo "Kernel image not found!"
+            echo "Kernel image missing!"
             exit 1
           fi
 
           cd AnyKernel3
 
-          # 🔥 fix model cho A21s
+          # 🔥 model A21s
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 tránh replace ramdisk nguy hiểm
-          sed -i 's/do\.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
+          # 🔥 flash permissive hơn cho OrangeFox
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
 
