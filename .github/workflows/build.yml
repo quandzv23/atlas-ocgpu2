@@ -71,8 +71,21 @@ jobs:
           # 🔥 FIX UAPI HEADERS
           mkdir -p include/uapi
 
+          # copy nếu tồn tại
           cp -r drivers/kernelsu/kernel/include/uapi/* \
-            include/uapi/ || true
+            include/uapi/ 2>/dev/null || true
+
+          # 🔥 create missing app_profile.h
+          cat > include/uapi/app_profile.h << 'EOF'
+#ifndef __KSU_APP_PROFILE_H
+#define __KSU_APP_PROFILE_H
+
+struct app_profile {
+    int dummy;
+};
+
+#endif
+EOF
 
       # 🔥 Fix scripts
       - name: Fix scripts
