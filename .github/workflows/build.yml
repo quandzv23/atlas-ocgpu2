@@ -77,15 +77,15 @@ jobs:
 
           # 🔥 create missing app_profile.h
           cat > include/uapi/app_profile.h << 'EOF'
-#ifndef __KSU_APP_PROFILE_H
-#define __KSU_APP_PROFILE_H
+          #ifndef __KSU_APP_PROFILE_H
+          #define __KSU_APP_PROFILE_H
 
-struct app_profile {
-    int dummy;
-};
+          struct app_profile {
+            int dummy;
+               };
 
-#endif
-EOF
+          #endif
+            EOF
 
       # 🔥 Fix scripts
       - name: Fix scripts
