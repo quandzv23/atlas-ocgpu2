@@ -44,48 +44,25 @@ jobs:
             https://github.com/samsungexynos850/atlas \
             kernel
 
-      # 🔥 Add KernelSU FIXED
+      # 🔥 Add KernelSU STABLE
       - name: Add KernelSU
         run: |
           cd kernel
 
+          rm -rf KernelSU
           rm -rf drivers/kernelsu
-          rm -rf KernelSU-Next*
 
-          # 🔥 stable download
-          wget -O ksu.tar.gz \
-            https://github.com/rifsxd/KernelSU-Next/archive/refs/heads/next.tar.gz
+          # 🔥 stable KernelSU
+          git clone --depth=1 \
+            -b main \
+            https://github.com/tiann/KernelSU.git \
+            KernelSU
 
-          # 🔥 verify archive
-          file ksu.tar.gz
+          # 🔥 auto patch kernel
+          bash KernelSU/kernel/setup.sh
 
-          tar -xzf ksu.tar.gz
-
-          mv KernelSU-Next-*/kernel drivers/kernelsu
-
-          grep -q "kernelsu/Kconfig" drivers/Kconfig || \
-          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-
+          # 🔥 verify
           test -f drivers/kernelsu/Kconfig
-
-          # 🔥 FIX UAPI HEADERS
-          mkdir -p include/uapi
-
-          # copy nếu tồn tại
-          cp -r drivers/kernelsu/kernel/include/uapi/* \
-            include/uapi/ 2>/dev/null || true
-
-          # 🔥 create missing app_profile.h
-          cat > include/uapi/app_profile.h << 'EOF'
-          #ifndef __KSU_APP_PROFILE_H
-          #define __KSU_APP_PROFILE_H
-
-          struct app_profile {
-            int dummy;
-               };
-
-          #endif
-            EOF
 
       # 🔥 Fix scripts
       - name: Fix scripts
@@ -109,7 +86,8 @@ jobs:
           export KBUILD_BUILD_USER="Gemini"
           export KBUILD_BUILD_HOST="Github-Actions"
 
-          export KSU_GIT_VERSION="NEXT"
+          export KSU_GIT_VERSION=10940
+          export KSU_VERSION=10940
 
           make exynos850-a21snsxx_defconfig
 
@@ -119,7 +97,7 @@ jobs:
           ./scripts/config --enable OVERLAY_FS || true
           ./scripts/config --enable KPROBE_EVENTS || true
 
-          # 🔥 reduce Samsung bootloop chance
+          # 🔥 reduce Samsung bootloop risk
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
 
@@ -150,10 +128,10 @@ jobs:
 
           cd AnyKernel3
 
-          # 🔥 A21s model
+          # 🔥 A21s
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 permissive flash
+          # 🔥 allow OrangeFox flash
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
