@@ -71,7 +71,7 @@ jobs:
           # 🔥 FIX UAPI HEADERS
           mkdir -p include/uapi
 
-          cp -r drivers/kernelsu/userspace/include/uapi/* \
+          cp -r drivers/kernelsu/kernel/include/uapi/* \
             include/uapi/ || true
 
       # 🔥 Fix scripts
