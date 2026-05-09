@@ -64,6 +64,10 @@ jobs:
           # 🔥 verify
           test -f drivers/kernelsu/Kconfig
 
+          # 🔥 FIX Samsung 4.14 compatibility
+          sed -i '/MODULE_IMPORT_NS/d' \
+            drivers/kernelsu/core/init.c
+
       # 🔥 Fix scripts
       - name: Fix scripts
         run: |
