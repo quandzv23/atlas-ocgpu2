@@ -51,22 +51,29 @@ jobs:
 
           rm -rf KernelSU
           rm -rf drivers/kernelsu
+          rm -rf drivers/ksu
 
-          # 🔥 KernelSU v0.9.5 (better for 4.14)
+          # 🔥 KernelSU old stable for 4.14
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
             KernelSU
 
-          # 🔥 auto patch kernel
+          # 🔥 auto patch
           bash KernelSU/kernel/setup.sh
 
-          # 🔥 verify
-          test -f drivers/kernelsu/Kconfig
+          # 🔥 debug
+          find drivers | grep ksu || true
 
-          # 🔥 fix Samsung 4.14 compatibility
-          sed -i '/MODULE_IMPORT_NS/d' \
-            drivers/kernelsu/core/init.c
+          # 🔥 auto detect init.c path
+          KSU_INIT=$(find drivers -path "*ksu*/core/init.c" | head -n 1)
+
+          echo "KSU_INIT=$KSU_INIT"
+
+          # 🔥 remove unsupported macro
+          if [ -f "$KSU_INIT" ]; then
+            sed -i '/MODULE_IMPORT_NS/d' "$KSU_INIT"
+          fi
 
       # 🔥 Fix scripts
       - name: Fix scripts
@@ -95,7 +102,7 @@ jobs:
 
           make exynos850-a21snsxx_defconfig
 
-          # 🔥 enable KernelSU
+          # 🔥 enable KSU
           ./scripts/config --enable KSU || true
           ./scripts/config --enable KPROBES || true
           ./scripts/config --enable OVERLAY_FS || true
@@ -135,7 +142,7 @@ jobs:
           # 🔥 A21s
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 allow OrangeFox flash
+          # 🔥 allow OrangeFox
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
