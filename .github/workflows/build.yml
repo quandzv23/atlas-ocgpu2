@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 🔥 Install deps
+      # Install deps
       - name: Install dependencies
         run: |
           sudo apt update
@@ -23,7 +23,7 @@ jobs:
             gcc g++ \
             clang lld llvm
 
-      # 🔥 FIX CCACHE
+      # Fix ccache
       - name: Fix ccache
         run: |
           sudo mkdir -p /usr/local/bin
@@ -35,7 +35,7 @@ jobs:
 
           echo "/usr/local/bin" >> $GITHUB_PATH
 
-      # 📦 Clone kernel
+      # Clone kernel
       - name: Clone kernel
         run: |
           rm -rf kernel
@@ -44,7 +44,7 @@ jobs:
             https://github.com/samsungexynos850/atlas \
             kernel
 
-      # 🔥 Add KernelSU
+      # Add KernelSU
       - name: Add KernelSU
         run: |
           cd kernel
@@ -53,29 +53,55 @@ jobs:
           rm -rf drivers/kernelsu
           rm -rf drivers/ksu
 
-          # 🔥 KernelSU old stable for 4.14
+          # KernelSU stable cho 4.14
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
             KernelSU
 
-          # 🔥 auto patch
+          # setup
           bash KernelSU/kernel/setup.sh
 
-          # 🔥 debug
-          find drivers | grep ksu || true
+          # detect real path
+          KSU_DIR=$(find drivers -type d -name kernelsu | head -n 1)
 
-          # 🔥 auto detect init.c path
-          KSU_INIT=$(find drivers -path "*ksu*/core/init.c" | head -n 1)
+          echo "KSU_DIR=$KSU_DIR"
 
-          echo "KSU_INIT=$KSU_INIT"
+          test -f "$KSU_DIR/Kconfig"
 
-          # 🔥 remove unsupported macro
-          if [ -f "$KSU_INIT" ]; then
-            sed -i '/MODULE_IMPORT_NS/d' "$KSU_INIT"
+          # ==================================================
+          # FIX MODULE_IMPORT_NS
+          # ==================================================
+          sed -i '/MODULE_IMPORT_NS/d' \
+            $KSU_DIR/core/init.c || true
+
+          # ==================================================
+          # FIX SAMSUNG 4.14 OLD API
+          # ==================================================
+          FILE_WRAPPER=$(find drivers -name file_wrapper.c | head -n 1)
+
+          if [ -f "$FILE_WRAPPER" ]; then
+
+            sed -i '/iopoll/d' "$FILE_WRAPPER" || true
+
+            sed -i '/remap_file_range/d' "$FILE_WRAPPER" || true
+
+            sed -i '/REMAP_FILE_DEDUP/d' "$FILE_WRAPPER" || true
+
           fi
 
-      # 🔥 Fix scripts
+          # ==================================================
+          # FIX UNDEFINED SYMBOLS
+          # ==================================================
+          sed -i '/ksu_handle_sys_reboot/d' kernel/reboot.c || true
+
+          sed -i '/ksu_vfs_read_hook/d' fs/read_write.c || true
+
+          sed -i '/ksu_execveat_hook/d' fs/exec.c || true
+
+          sed -i '/ksu_input_hook/d' drivers/input/input.c || true
+
+      # Fix scripts
       - name: Fix scripts
         run: |
           cd kernel
@@ -86,7 +112,7 @@ jobs:
 
           chmod +x scripts/min-tool-version.sh
 
-      # 🔥 BUILD
+      # Build kernel
       - name: Build kernel
         run: |
           cd kernel
@@ -102,13 +128,12 @@ jobs:
 
           make exynos850-a21snsxx_defconfig
 
-          # 🔥 enable KSU
           ./scripts/config --enable KSU || true
           ./scripts/config --enable KPROBES || true
           ./scripts/config --enable OVERLAY_FS || true
           ./scripts/config --enable KPROBE_EVENTS || true
 
-          # 🔥 reduce Samsung bootloop risk
+          # giảm bootloop Samsung
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
 
@@ -116,11 +141,13 @@ jobs:
 
           make -j$(nproc) \
             LLVM=1 \
+            LLVM_IAS=1 \
             CC=clang \
+            LD=ld.lld \
             HOSTCC=gcc \
             HOSTCXX=g++
 
-      # 📦 AnyKernel3 flashable
+      # Pack AnyKernel3
       - name: Pack AnyKernel3
         run: |
           rm -rf AnyKernel3
@@ -139,15 +166,15 @@ jobs:
 
           cd AnyKernel3
 
-          # 🔥 A21s
+          # A21s
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
 
-          # 🔥 allow OrangeFox
+          # allow OrangeFox flash
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
 
           zip -r9 ../A21s-Kernel-KSU.zip *
 
-      # 📤 Upload
+      # Upload
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
