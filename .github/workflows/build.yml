@@ -84,46 +84,9 @@ jobs:
           # ==================================================
           sed -i 's/\(.*ksu_handle_sys_reboot.*\)/\/\/ \1/g' kernel/reboot.c       || true
           sed -i 's/\(.*ksu_vfs_read_hook.*\)/\/\/ \1/g'     fs/read_write.c       || true
-          sed -i 's/\(.*ksu_execveat_hook.*\)/\/\/ \1/g'     fs/exec.c             || true
+          # KHÔNG sửa fs/exec.c vì gây lỗi else mồ côi
+          true
           sed -i 's/\(.*ksu_input_hook.*\)/\/\/ \1/g'        drivers/input/input.c || true
-
-      # ────────────────────────────────────────────────────────
-      # 5. Patch SUSFS cho kernel 4.14 (non-GKI)
-      # ────────────────────────────────────────────────────────
-      - name: Patch SUSFS
-        run: |
-          cd kernel
-
-          # Clone SUSFS repo branch kernel-4.14
-          git clone --depth=1 \
-            -b kernel-4.14 \
-            https://gitlab.com/simonpunk/susfs4ksu.git \
-            ../susfs4ksu
-
-          # Bước 1: copy file nguồn SUSFS vào kernel tree
-          cp -v ../susfs4ksu/kernel_patches/fs/susfs.c               fs/
-          cp -v ../susfs4ksu/kernel_patches/fs/sus_su.c               fs/ 2>/dev/null || true
-          cp -v ../susfs4ksu/kernel_patches/include/linux/susfs.h     include/linux/
-          cp -v ../susfs4ksu/kernel_patches/include/linux/sus_su.h    include/linux/ 2>/dev/null || true
-
-          # Bước 2: apply patch tích hợp SUSFS vào kernel
-          cp -v ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch .
-          patch -p1 --forward --fuzz=3 < 50_add_susfs_in_kernel-4.14.patch || true
-          rm -f 50_add_susfs_in_kernel-4.14.patch
-
-          # Bước 3: apply patch tích hợp SUSFS vào KernelSU
-          KSU_DIR=$(find -L drivers -type d \( -name "kernelsu" -o -name "ksu" \) | head -n 1)
-          [ -z "$KSU_DIR" ] && KSU_DIR="KernelSU/kernel"
-          if [ -f "../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ]; then
-            cp -v ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch .
-            # apply vào thư mục KernelSU
-            pushd "$(dirname $KSU_DIR)" > /dev/null
-            patch -p1 --forward --fuzz=3 < "$(dirs -l +1)/10_enable_susfs_for_ksu.patch" || true
-            popd > /dev/null
-            rm -f 10_enable_susfs_for_ksu.patch
-          fi
-
-          echo "[+] SUSFS patch done"
 
       # ────────────────────────────────────────────────────────
       # 6. Overclock Mali-G52 lên 1196 MHz (Exynos 850)
@@ -210,15 +173,7 @@ jobs:
 
           # KernelSU-Next
           ./scripts/config --enable  KSU              || true
-          ./scripts/config --enable  KSU_SUSFS         || true
-          ./scripts/config --enable  KSU_SUSFS_SUS_PATH || true
-          ./scripts/config --enable  KSU_SUSFS_SUS_MOUNT || true
-          ./scripts/config --enable  KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT || true
-          ./scripts/config --enable  KSU_SUSFS_SUS_KSTAT || true
-          ./scripts/config --enable  KSU_SUSFS_TRY_UMOUNT || true
-          ./scripts/config --enable  KSU_SUSFS_SPOOF_UNAME || true
-          ./scripts/config --enable  KSU_SUSFS_ENABLE_LOG || true
-
+          
           # Hooks & overlayfs
           ./scripts/config --enable  KPROBES           || true
           ./scripts/config --enable  OVERLAY_FS        || true
@@ -228,8 +183,10 @@ jobs:
           ./scripts/config --disable LTO               || true
           ./scripts/config --disable CFI_CLANG         || true
 
-          yes "" | make olddefconfig
+          yes "" | make olddefconfig 
 
+          set -o pipefail
+          
           make -j$(nproc) \
             ARCH=arm64 \
             LLVM=1 \
@@ -244,7 +201,12 @@ jobs:
             HOSTCC=gcc \
             HOSTCXX=g++ \
             2>&1 | tee ../build.log
+          BUILD_EXIT=$?
 
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "Kernel build failed"
+            exit $BUILD_EXIT
+          fi
       # ────────────────────────────────────────────────────────
       # 9. Debug: List kernel boot files
       # ────────────────────────────────────────────────────────
