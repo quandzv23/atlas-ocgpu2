@@ -14,7 +14,6 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-
           sudo apt install -y \
             git curl wget file \
             bc bison flex zip unzip \
@@ -27,19 +26,15 @@ jobs:
       - name: Fix ccache
         run: |
           sudo mkdir -p /usr/local/bin
-
           echo '#!/bin/bash' | sudo tee /usr/local/bin/ccache
           echo 'exec "$@"' | sudo tee -a /usr/local/bin/ccache
-
           sudo chmod +x /usr/local/bin/ccache
-
           echo "/usr/local/bin" >> $GITHUB_PATH
 
       # Clone kernel
       - name: Clone kernel
         run: |
           rm -rf kernel
-
           git clone --depth=1 \
             https://github.com/samsungexynos850/atlas \
             kernel
@@ -48,97 +43,78 @@ jobs:
       - name: Add KernelSU
         run: |
           cd kernel
-
           rm -rf KernelSU
           rm -rf drivers/kernelsu
           rm -rf drivers/ksu
-
           # KernelSU stable cho 4.14
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
             KernelSU
-
           # setup
           bash KernelSU/kernel/setup.sh
-
-          # detect real path
-          KSU_DIR=$(find drivers -type d -name kernelsu | head -n 1)
-
+          # detect real path - tìm cả kernelsu lẫn ksu
+          KSU_DIR=$(find drivers -type d \( -name "kernelsu" -o -name "ksu" \) | head -n 1)
           echo "KSU_DIR=$KSU_DIR"
-
-          test -f "$KSU_DIR/Kconfig"
-
+          # fallback nếu find trả về rỗng
+          if [ -z "$KSU_DIR" ]; then
+            echo "WARNING: KSU_DIR not found in drivers/, fallback to KernelSU/kernel"
+            KSU_DIR="KernelSU/kernel"
+          fi
+          echo "Using KSU_DIR=$KSU_DIR"
+          # kiểm tra nhẹ, không crash
+          if [ ! -f "$KSU_DIR/Kconfig" ]; then
+            echo "WARNING: Kconfig not found at $KSU_DIR, skipping check"
+          fi
           # ==================================================
           # FIX MODULE_IMPORT_NS
           # ==================================================
           sed -i '/MODULE_IMPORT_NS/d' \
             $KSU_DIR/core/init.c || true
-
           # ==================================================
           # FIX SAMSUNG 4.14 OLD API
           # ==================================================
           FILE_WRAPPER=$(find drivers -name file_wrapper.c | head -n 1)
-
           if [ -f "$FILE_WRAPPER" ]; then
-
             sed -i '/iopoll/d' "$FILE_WRAPPER" || true
-
             sed -i '/remap_file_range/d' "$FILE_WRAPPER" || true
-
             sed -i '/REMAP_FILE_DEDUP/d' "$FILE_WRAPPER" || true
-
           fi
-
           # ==================================================
           # FIX UNDEFINED SYMBOLS
           # ==================================================
           sed -i '/ksu_handle_sys_reboot/d' kernel/reboot.c || true
-
           sed -i '/ksu_vfs_read_hook/d' fs/read_write.c || true
-
           sed -i '/ksu_execveat_hook/d' fs/exec.c || true
-
           sed -i '/ksu_input_hook/d' drivers/input/input.c || true
 
       # Fix scripts
       - name: Fix scripts
         run: |
           cd kernel
-
           chmod +x scripts/config || true
-
           echo -e '#!/bin/sh\nexit 0' > scripts/min-tool-version.sh
-
           chmod +x scripts/min-tool-version.sh
 
       # Build kernel
       - name: Build kernel
         run: |
           cd kernel
-
           export ARCH=arm64
           export SUBARCH=arm64
-
           export KBUILD_BUILD_USER="Gemini"
           export KBUILD_BUILD_HOST="Github-Actions"
-
           export KSU_GIT_VERSION=10940
           export KSU_VERSION=10940
-
           make exynos850-a21snsxx_defconfig
-
           ./scripts/config --enable KSU || true
           ./scripts/config --enable KPROBES || true
           ./scripts/config --enable OVERLAY_FS || true
           ./scripts/config --enable KPROBE_EVENTS || true
-
           # giảm bootloop Samsung
           ./scripts/config --disable LTO || true
           ./scripts/config --disable CFI_CLANG || true
-
           yes "" | make olddefconfig
-
           make -j$(nproc) \
             LLVM=1 \
             LLVM_IAS=1 \
@@ -151,10 +127,8 @@ jobs:
       - name: Pack AnyKernel3
         run: |
           rm -rf AnyKernel3
-
           git clone --depth=1 \
             https://github.com/osm0sis/AnyKernel3
-
           if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
             cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           elif [ -f kernel/arch/arm64/boot/Image ]; then
@@ -163,15 +137,11 @@ jobs:
             echo "Kernel image missing!"
             exit 1
           fi
-
           cd AnyKernel3
-
           # A21s
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
-
           # allow OrangeFox flash
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
-
           zip -r9 ../A21s-Kernel-KSU.zip *
 
       # Upload
