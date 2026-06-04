@@ -79,12 +79,13 @@ jobs:
 
           # ==================================================
           # FIX UNDEFINED SYMBOLS
+          # Comment thay vì xóa để tránh syntax error (else mồ côi)
           # (đang ở cd kernel nên KHÔNG có prefix "kernel/")
           # ==================================================
-          sed -i '/ksu_handle_sys_reboot/d' kernel/reboot.c         || true
-          sed -i '/ksu_vfs_read_hook/d'     fs/read_write.c         || true
-          sed -i '/ksu_execveat_hook/d'     fs/exec.c               || true
-          sed -i '/ksu_input_hook/d'        drivers/input/input.c   || true
+          sed -i 's/\(.*ksu_handle_sys_reboot.*\)/\/\/ \1/g' kernel/reboot.c       || true
+          sed -i 's/\(.*ksu_vfs_read_hook.*\)/\/\/ \1/g'     fs/read_write.c       || true
+          sed -i 's/\(.*ksu_execveat_hook.*\)/\/\/ \1/g'     fs/exec.c             || true
+          sed -i 's/\(.*ksu_input_hook.*\)/\/\/ \1/g'        drivers/input/input.c || true
 
       # ────────────────────────────────────────────────────────
       # 5. Patch SUSFS cho kernel 4.14 (non-GKI)
@@ -245,7 +246,21 @@ jobs:
             2>&1 | tee ../build.log
 
       # ────────────────────────────────────────────────────────
-      # 9. Pack AnyKernel3
+      # 9. Debug: List kernel boot files
+      # ────────────────────────────────────────────────────────
+      - name: Debug kernel image
+        run: |
+          echo "=== Listing kernel boot files ==="
+          ls -lh kernel/arch/arm64/boot/ || echo "kernel/arch/arm64/boot/ not found"
+          echo ""
+          echo "=== Listing kernel root ==="
+          ls -lh kernel/ | head -20
+          echo ""
+          echo "=== Check kernel build output ==="
+          tail -50 build.log || echo "build.log not found"
+
+      # ────────────────────────────────────────────────────────
+      # 10. Pack AnyKernel3
       # ────────────────────────────────────────────────────────
       - name: Pack AnyKernel3
         run: |
@@ -257,28 +272,43 @@ jobs:
           for f in \
             kernel/arch/arm64/boot/Image.gz-dtb \
             kernel/arch/arm64/boot/Image.gz \
-            kernel/arch/arm64/boot/Image; do
+            kernel/arch/arm64/boot/Image \
+            kernel/arch/arm64/boot/zImage \
+            kernel/Image \
+            kernel/Image.gz \
+            kernel/Image.gz-dtb; do
             if [ -f "$f" ]; then
               KERNEL_IMAGE="$f"
+              echo "[+] Found kernel image: $KERNEL_IMAGE"
               break
             fi
           done
 
           if [ -z "$KERNEL_IMAGE" ]; then
-            echo "ERROR: Kernel image not found!"
+            echo "ERROR: Kernel image not found in any expected path!"
+            echo "Available files in kernel/arch/arm64/boot/:"
+            find kernel/arch/arm64/boot/ -type f 2>/dev/null || echo "  (not found)"
+            echo ""
+            echo "Build likely failed. Check build.log:"
+            tail -100 build.log || echo "  (build.log not found)"
             exit 1
           fi
 
           echo "Using kernel image: $KERNEL_IMAGE"
-          cp "$KERNEL_IMAGE" AnyKernel3/
+          cp -v "$KERNEL_IMAGE" AnyKernel3/
 
           cd AnyKernel3
+          # Rename image to standard name nếu cần
+          if [ "$(basename $KERNEL_IMAGE)" != "Image" ] && [ "$(basename $KERNEL_IMAGE)" != "Image.gz-dtb" ]; then
+            mv "$(basename $KERNEL_IMAGE)" Image || true
+          fi
+
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
           sed -i 's/do.devicecheck=1/do.devicecheck=0/'     anykernel.sh || true
           zip -r9 ../A21s-Kernel-KSU-SUSFS-OC.zip ./*
 
       # ────────────────────────────────────────────────────────
-      # 10. Upload artifacts
+      # 11. Upload artifacts
       # ────────────────────────────────────────────────────────
       - name: Upload kernel zip
         uses: actions/upload-artifact@v4
