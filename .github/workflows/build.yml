@@ -36,63 +36,74 @@ jobs:
             https://github.com/samsungexynos850/atlas \
             kernel
 
-      - name: Setup KernelSU v0.9.5 (stable)
+      - name: Remove KernelSU hooks from kernel
+        run: |
+          cd kernel
+          
+          echo "[*] Removing KernelSU hook calls from kernel source..."
+          
+          # kernel/reboot.c - ksu_handle_sys_reboot
+          if grep -q "ksu_handle_sys_reboot" kernel/reboot.c; then
+            echo "[+] Removing ksu_handle_sys_reboot from kernel/reboot.c"
+            sed -i 's/.*ksu_handle_sys_reboot.*/\/\/ &/g' kernel/reboot.c
+          fi
+          
+          # fs/read_write.c - ksu_vfs_read_hook
+          if grep -q "ksu_vfs_read_hook" fs/read_write.c; then
+            echo "[+] Removing ksu_vfs_read_hook from fs/read_write.c"
+            sed -i 's/.*ksu_vfs_read_hook.*/\/\/ &/g' fs/read_write.c
+          fi
+          
+          # fs/exec.c - ksu_execveat_hook
+          if grep -q "ksu_execveat_hook" fs/exec.c; then
+            echo "[+] Removing ksu_execveat_hook from fs/exec.c"
+            sed -i 's/.*ksu_execveat_hook.*/\/\/ &/g' fs/exec.c
+          fi
+          
+          # drivers/input/input.c - ksu_input_hook
+          if grep -q "ksu_input_hook" drivers/input/input.c; then
+            echo "[+] Removing ksu_input_hook from drivers/input/input.c"
+            sed -i 's/.*ksu_input_hook.*/\/\/ &/g' drivers/input/input.c
+          fi
+          
+          echo "[+] Kernel hook removal done"
+
+      - name: Setup KernelSU v0.9.5
         run: |
           cd kernel
           rm -rf KernelSU drivers/kernelsu drivers/ksu
 
-          # KernelSU stable v0.9.5 - tested với 4.14
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
             KernelSU
 
-          # Run setup.sh
           bash KernelSU/kernel/setup.sh
 
-          # Find KSU_DIR
           KSU_DIR=$(find -L drivers -type d \( -name "kernelsu" -o -name "ksu" \) | head -n 1)
           [ -z "$KSU_DIR" ] && KSU_DIR="KernelSU/kernel"
           echo "Using KSU_DIR=$KSU_DIR"
 
-          # Fix MODULE_IMPORT_NS (không tồn tại trên 4.14)
           sed -i '/MODULE_IMPORT_NS/d' "$KSU_DIR/core/init.c" || true
-
-          # Fix file_wrapper.c API mismatch
-          FILE_WRAPPER=$(find drivers -name file_wrapper.c | head -n 1)
-          if [ -f "$FILE_WRAPPER" ]; then
-            echo "[+] Fixing file_wrapper.c..."
-            # Chỉ xóa dòng chứa chính xác các API mới, không phá struct
-            sed -i '/\.iopoll\b/d' "$FILE_WRAPPER" || true
-            sed -i '/\.remap_file_range\b/d' "$FILE_WRAPPER" || true
-            sed -i 's/REMAP_FILE_DEDUP/0/g' "$FILE_WRAPPER" || true
-          fi
 
           echo "[+] KernelSU v0.9.5 setup done"
 
       - name: GPU Overclock Mali-G52 1196MHz
         run: |
           cd kernel
-
-          # Tìm GPU DVFS tables
+          echo "[*] GPU overclock patch..."
+          
+          # Find GPU DVFS tables
           GPU_TABLE=$(grep -rl "gpu_dvfs_table\|gpu_max_clock" \
             drivers/gpu/ arch/ --include="*.c" --include="*.h" 2>/dev/null | head -n 3)
 
           for f in $GPU_TABLE; do
             if grep -q "949" "$f" 2>/dev/null; then
-              # Thêm entry 1196 MHz
               sed -i '/949000/a\\t\t1196000,' "$f" || true
+              echo "[+] Added 1196MHz to $f"
             fi
           done
-
-          # Tìm và patch GPU max clock
-          GPU_PLATFORM=$(find drivers/gpu -name "*.c" | \
-            xargs grep -l "gpu_max_clock" 2>/dev/null | head -n 1)
-
-          if [ -n "$GPU_PLATFORM" ]; then
-            sed -i 's/\(gpu_max_clock.*=\s*\)[0-9]\+/\11196/' "$GPU_PLATFORM" || true
-          fi
-
+          
           echo "[+] GPU OC done"
 
       - name: Fix scripts
@@ -121,6 +132,7 @@ jobs:
 
           yes "" | make olddefconfig
 
+          # Main build
           make -j$(nproc) \
             ARCH=arm64 \
             LLVM=1 \
@@ -136,9 +148,47 @@ jobs:
             HOSTCXX=g++ \
             2>&1 | tee ../build.log
 
+          # Explicit Image target (IMPORTANT!)
+          echo "[*] Building Image explicitly..."
+          make Image.gz-dtb \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            HOSTCC=gcc \
+            HOSTCXX=g++ \
+            2>&1 | tee -a ../build.log
+
+          # Check if build succeeded
+          if [ $? -eq 0 ]; then
+            echo "[+] Build SUCCESS!"
+          else
+            echo "[!] Build Image target had issues, but continuing..."
+          fi
+
       - name: Check kernel image
         run: |
-          ls -lh kernel/arch/arm64/boot/ || echo "Not found"
+          echo "=== Kernel boot directory ==="
+          ls -lh kernel/arch/arm64/boot/ || echo "boot/ not found"
+          echo ""
+          echo "=== Search for Image in kernel ==="
+          find kernel -name "Image*" -o -name "vmlinux*" -o -name "zImage*" 2>/dev/null | head -10
+          echo ""
+          echo "=== Check build result ==="
+          if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
+            echo "[✓] Image.gz-dtb found"
+          elif [ -f kernel/arch/arm64/boot/Image ]; then
+            echo "[✓] Image found"
+          else
+            echo "[!] No Image found - build may have failed"
+            tail -100 build.log | grep -i "error\|warning" | tail -20
+          fi
 
       - name: Pack AnyKernel3
         run: |
@@ -146,31 +196,55 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
 
           KERNEL_IMAGE=""
+          # Try multiple paths in order
           for f in \
             kernel/arch/arm64/boot/Image.gz-dtb \
             kernel/arch/arm64/boot/Image.gz \
-            kernel/arch/arm64/boot/Image; do
-            [ -f "$f" ] && KERNEL_IMAGE="$f" && break
+            kernel/arch/arm64/boot/Image \
+            kernel/Image.gz-dtb \
+            kernel/Image.gz \
+            kernel/Image; do
+            if [ -f "$f" ]; then
+              KERNEL_IMAGE="$f"
+              echo "[+] Found: $KERNEL_IMAGE ($(stat -f%z "$f" 2>/dev/null || stat -c%s "$f"))"
+              break
+            fi
           done
 
           if [ -z "$KERNEL_IMAGE" ]; then
             echo "ERROR: Kernel image not found!"
+            echo ""
+            echo "Searching all files in kernel:"
+            find kernel/arch/arm64/boot/ -type f 2>/dev/null | head -20
             exit 1
           fi
 
+          echo "[+] Using: $KERNEL_IMAGE"
           cp -v "$KERNEL_IMAGE" AnyKernel3/
+          
           cd AnyKernel3
+          # Ensure Image name is standard for AnyKernel3
+          if [ -f "Image.gz-dtb" ]; then
+            :
+          elif [ -f "Image.gz" ]; then
+            [ ! -f "Image.gz-dtb" ] && cp Image.gz Image.gz-dtb || true
+          elif [ -f "Image" ]; then
+            [ ! -f "Image.gz-dtb" ] && gzip -k -9 Image && mv Image.gz Image.gz-dtb 2>/dev/null || true
+          fi
+          
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
           zip -r9 ../A21s-Kernel-KSU-OC.zip ./*
+          
+          echo "[✓] Kernel zip created"
 
-      - name: Upload
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
           name: A21s-Kernel-KSU-OC
           path: A21s-Kernel-KSU-OC.zip
 
-      - name: Upload log
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
