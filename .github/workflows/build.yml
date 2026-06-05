@@ -16,7 +16,7 @@ jobs:
             bc bison flex zip unzip \
             libssl-dev make \
             libc6-dev libncurses5-dev libelf-dev \
-            gcc g++ \
+            gcc g++ gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             python3 binutils
 
       - name: Fix ccache
@@ -34,7 +34,7 @@ jobs:
       - name: Setup KernelSU v0.9.5
         run: |
           cd kernel
-          rm -rf kernel/drivers/kernelsu kernel/drivers/ksu
+          rm -rf drivers/kernelsu drivers/ksu KernelSU
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
@@ -93,9 +93,13 @@ jobs:
           export SUBARCH=arm64
           export KBUILD_BUILD_USER="Gemini"
           export KBUILD_BUILD_HOST="GitHub-Actions"
+          
+          # Giúp phát hiện lỗi chính xác khi dùng lệnh kiểm tra chéo (pipe '|')
+          set -o pipefail
+
           make -j$(nproc) \
             ARCH=arm64 \
-            CC=gcc \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             2>&1 | tee ../build.log
