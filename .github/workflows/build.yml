@@ -38,93 +38,86 @@ jobs:
 
       # ─────────────────────────────────────────────────────
       # FIX 1: KernelSU hook calls → (void)0; bằng Python
-      # Sed comment // không work vì if mất body → else mồ côi
       # ─────────────────────────────────────────────────────
       - name: Remove KernelSU hooks from kernel source
         run: |
           cd kernel
           python3 - << 'PYEOF'
-import re, os
+          import re, os
 
-FILES = {
-    'kernel/reboot.c':          'ksu_handle_sys_reboot',
-    'fs/read_write.c':          'ksu_vfs_read_hook',
-    'fs/exec.c':                'ksu_execveat_hook',
-    'drivers/input/input.c':    'ksu_input_hook',
-}
+          FILES = {
+              'kernel/reboot.c':          'ksu_handle_sys_reboot',
+              'fs/read_write.c':          'ksu_vfs_read_hook',
+              'fs/exec.c':                'ksu_execveat_hook',
+              'drivers/input/input.c':    'ksu_input_hook',
+          }
 
-for filepath, hook in FILES.items():
-    if not os.path.isfile(filepath):
-        print(f'[!] Not found: {filepath}')
-        continue
-    with open(filepath, 'r', errors='replace') as f:
-        content = f.read()
-    pattern = r'\b' + re.escape(hook) + r'\s*\([^;]*\)\s*;'
-    new_content = re.sub(pattern, '(void)0;', content)
-    if new_content != content:
-        with open(filepath, 'w') as f:
-            f.write(new_content)
-        print(f'[+] Fixed: {filepath}')
-    else:
-        print(f'[=] No hook found: {filepath}')
-PYEOF
+          for filepath, hook in FILES.items():
+              if not os.path.isfile(filepath):
+                  print(f'[!] Not found: {filepath}')
+                  continue
+              with open(filepath, 'r', errors='replace') as f:
+                  content = f.read()
+              pattern = r'\b' + re.escape(hook) + r'\s*\([^;]*\)\s*;'
+              new_content = re.sub(pattern, '(void)0;', content)
+              if new_content != content:
+                  with open(filepath, 'w') as f:
+                      f.write(new_content)
+                  print(f'[+] Fixed: {filepath}')
+              else:
+                  print(f'[=] No hook found: {filepath}')
+          PYEOF
           echo "[+] Hook removal done"
 
       # ─────────────────────────────────────────────────────
       # FIX 2: Format string errors (Clang strict mode)
-      #  - systrace_mark.h: zero-length format string
-      #  - ems.h + ems_debug.h: %lu với u64 args → %llu
       # ─────────────────────────────────────────────────────
       - name: Fix Clang format string errors
         run: |
           cd kernel
           python3 - << 'PYEOF'
-import re, os, glob
+          import re, os, glob
 
-# ── Fix 1: systrace_mark.h zero-length format string ──────────────
-f = 'include/trace/systrace_mark.h'
-if os.path.isfile(f):
-    with open(f, 'r', errors='replace') as fh:
-        content = fh.read()
-    # Thêm space vào format string rỗng "" → " "
-    new = re.sub(r'(gnu_printf\s*\([^)]*\)\s*\w+\s*\(\s*)""\s*\)',
-                 r'\1" ")',
-                 content)
-    # Hoặc đơn giản: thay "" thành "\n" trong printf format
-    new = new.replace('__printf(1, 0) void systrace_mark(const char *fmt, ...)',
-                      '__printf(1, 0) __attribute__((format(printf, 1, 0))) void systrace_mark(const char *fmt, ...)')
-    # Cách chắc nhất: comment toàn bộ attribute nếu gây lỗi
-    new = re.sub(r'(TRACE_PRINTK_FMT\s*=\s*)""\s*([,;])',
-                 r'\1" "\2', new)
-    if new != content:
-        with open(f, 'w') as fh:
-            fh.write(new)
-        print(f'[+] Fixed: {f}')
-    else:
-        print(f'[=] No change: {f}')
+          # ── Fix 1: systrace_mark.h zero-length format string ──────────────
+          f = 'include/trace/systrace_mark.h'
+          if os.path.isfile(f):
+              with open(f, 'r', errors='replace') as fh:
+                  content = fh.read()
+              # Thêm space vào format string rỗng "" → " "
+              new = re.sub(r'(gnu_printf\s*\([^)]*\)\s*\w+\s*\(\s*)""\s*\)',
+                           r'\1" ")',
+                           content)
+              new = new.replace('__printf(1, 0) void systrace_mark(const char *fmt, ...)',
+                                '__printf(1, 0) __attribute__((format(printf, 1, 0))) void systrace_mark(const char *fmt, ...)')
+              new = re.sub(r'(TRACE_PRINTK_FMT\s*=\s*)""\s*([,;])',
+                           r'\1" "\2', new)
+              if new != content:
+                  with open(f, 'w') as fh:
+                      fh.write(new)
+                  print(f'[+] Fixed: {f}')
+              else:
+                  print(f'[=] No change: {f}')
 
-# ── Fix 2: ems.h và ems_debug.h: %lu → %llu cho u64 args ─────────
-trace_files = [
-    'include/trace/events/ems.h',
-    'include/trace/events/ems_debug.h',
-]
-for f in trace_files:
-    if not os.path.isfile(f):
-        print(f'[!] Not found: {f}')
-        continue
-    with open(f, 'r', errors='replace') as fh:
-        content = fh.read()
-    # Thay %lu thành %llu trong TP_printk format strings
-    # chỉ trong context __entry->xxx là u64
-    new = re.sub(r'%lu', '%llu', content)
-    if new != content:
-        with open(f, 'w') as fh:
-            fh.write(new)
-        count = content.count('%lu') - new.count('%lu')
-        print(f'[+] Fixed {f}: replaced %lu → %llu')
-    else:
-        print(f'[=] No %lu found: {f}')
-PYEOF
+          # ── Fix 2: ems.h và ems_debug.h: %lu → %llu cho u64 args ─────────
+          trace_files = [
+              'include/trace/events/ems.h',
+              'include/trace/events/ems_debug.h',
+          ]
+          for f in trace_files:
+              if not os.path.isfile(f):
+                  print(f'[!] Not found: {f}')
+                  continue
+              with open(f, 'r', errors='replace') as fh:
+                  content = fh.read()
+              new = re.sub(r'%lu', '%llu', content)
+              if new != content:
+                  with open(f, 'w') as fh:
+                      fh.write(new)
+                  count = content.count('%lu') - new.count('%lu')
+                  print(f'[+] Fixed {f}: replaced %lu → %llu')
+              else:
+                  print(f'[=] No %lu found: {f}')
+          PYEOF
           echo "[+] Format string fix done"
 
       - name: Setup KernelSU v0.9.5
@@ -176,7 +169,7 @@ PYEOF
 
           make exynos850-a21snsxx_defconfig
 
-          ./scripts/config --enable  KSU           || true
+          ./scripts/config --enable  KSU            || true
           ./scripts/config --enable  KPROBES        || true
           ./scripts/config --enable  OVERLAY_FS     || true
           ./scripts/config --enable  KPROBE_EVENTS  || true
@@ -244,3 +237,5 @@ PYEOF
         with:
           name: build-log
           path: build.log
+
+```
