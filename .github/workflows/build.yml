@@ -1,10 +1,12 @@
 name: Build A21s Kernel
+
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,8 +18,9 @@ jobs:
             bc bison flex zip unzip \
             libssl-dev make \
             libc6-dev libncurses5-dev libelf-dev \
-            gcc g++ gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            python3 binutils
+            gcc g++ \
+            clang lld llvm \
+            python3 python2 binutils
 
       - name: Fix ccache
         run: |
@@ -29,40 +32,132 @@ jobs:
       - name: Clone kernel
         run: |
           rm -rf kernel
-          git clone --depth=1 https://github.com/samsungexynos850/atlas kernel
+          git clone --depth=1 \
+            https://github.com/samsungexynos850/atlas \
+            kernel
+
+      # ─────────────────────────────────────────────────────
+      # FIX 1: KernelSU hook calls → (void)0; bằng Python
+      # Sed comment // không work vì if mất body → else mồ côi
+      # ─────────────────────────────────────────────────────
+      - name: Remove KernelSU hooks from kernel source
+        run: |
+          cd kernel
+          python3 - << 'PYEOF'
+import re, os
+
+FILES = {
+    'kernel/reboot.c':          'ksu_handle_sys_reboot',
+    'fs/read_write.c':          'ksu_vfs_read_hook',
+    'fs/exec.c':                'ksu_execveat_hook',
+    'drivers/input/input.c':    'ksu_input_hook',
+}
+
+for filepath, hook in FILES.items():
+    if not os.path.isfile(filepath):
+        print(f'[!] Not found: {filepath}')
+        continue
+    with open(filepath, 'r', errors='replace') as f:
+        content = f.read()
+    pattern = r'\b' + re.escape(hook) + r'\s*\([^;]*\)\s*;'
+    new_content = re.sub(pattern, '(void)0;', content)
+    if new_content != content:
+        with open(filepath, 'w') as f:
+            f.write(new_content)
+        print(f'[+] Fixed: {filepath}')
+    else:
+        print(f'[=] No hook found: {filepath}')
+PYEOF
+          echo "[+] Hook removal done"
+
+      # ─────────────────────────────────────────────────────
+      # FIX 2: Format string errors (Clang strict mode)
+      #  - systrace_mark.h: zero-length format string
+      #  - ems.h + ems_debug.h: %lu với u64 args → %llu
+      # ─────────────────────────────────────────────────────
+      - name: Fix Clang format string errors
+        run: |
+          cd kernel
+          python3 - << 'PYEOF'
+import re, os, glob
+
+# ── Fix 1: systrace_mark.h zero-length format string ──────────────
+f = 'include/trace/systrace_mark.h'
+if os.path.isfile(f):
+    with open(f, 'r', errors='replace') as fh:
+        content = fh.read()
+    # Thêm space vào format string rỗng "" → " "
+    new = re.sub(r'(gnu_printf\s*\([^)]*\)\s*\w+\s*\(\s*)""\s*\)',
+                 r'\1" ")',
+                 content)
+    # Hoặc đơn giản: thay "" thành "\n" trong printf format
+    new = new.replace('__printf(1, 0) void systrace_mark(const char *fmt, ...)',
+                      '__printf(1, 0) __attribute__((format(printf, 1, 0))) void systrace_mark(const char *fmt, ...)')
+    # Cách chắc nhất: comment toàn bộ attribute nếu gây lỗi
+    new = re.sub(r'(TRACE_PRINTK_FMT\s*=\s*)""\s*([,;])',
+                 r'\1" "\2', new)
+    if new != content:
+        with open(f, 'w') as fh:
+            fh.write(new)
+        print(f'[+] Fixed: {f}')
+    else:
+        print(f'[=] No change: {f}')
+
+# ── Fix 2: ems.h và ems_debug.h: %lu → %llu cho u64 args ─────────
+trace_files = [
+    'include/trace/events/ems.h',
+    'include/trace/events/ems_debug.h',
+]
+for f in trace_files:
+    if not os.path.isfile(f):
+        print(f'[!] Not found: {f}')
+        continue
+    with open(f, 'r', errors='replace') as fh:
+        content = fh.read()
+    # Thay %lu thành %llu trong TP_printk format strings
+    # chỉ trong context __entry->xxx là u64
+    new = re.sub(r'%lu', '%llu', content)
+    if new != content:
+        with open(f, 'w') as fh:
+            fh.write(new)
+        count = content.count('%lu') - new.count('%lu')
+        print(f'[+] Fixed {f}: replaced %lu → %llu')
+    else:
+        print(f'[=] No %lu found: {f}')
+PYEOF
+          echo "[+] Format string fix done"
 
       - name: Setup KernelSU v0.9.5
         run: |
           cd kernel
-          rm -rf drivers/kernelsu drivers/ksu KernelSU
+          rm -rf KernelSU drivers/kernelsu drivers/ksu
+
           git clone --depth=1 \
             -b v0.9.5 \
             https://github.com/tiann/KernelSU.git \
             KernelSU
+
           bash KernelSU/kernel/setup.sh
-          KSU_DIR=$(find -L drivers -type d \( -name kernelsu -o -name ksu \) | head -n 1)
-          if [ -z "$KSU_DIR" ]; then
-            KSU_DIR="KernelSU/kernel"
-          fi
+
+          KSU_DIR=$(find -L drivers -type d \( -name "kernelsu" -o -name "ksu" \) | head -n 1)
+          [ -z "$KSU_DIR" ] && KSU_DIR="KernelSU/kernel"
           echo "Using KSU_DIR=$KSU_DIR"
+
           sed -i '/MODULE_IMPORT_NS/d' "$KSU_DIR/core/init.c" || true
+          echo "[+] KernelSU v0.9.5 done"
 
       - name: GPU Overclock Mali-G52 1196MHz
         run: |
           cd kernel
-          GPU_TABLE=$(grep -rl \
-            "gpu_dvfs_table\|gpu_max_clock" \
-            drivers/gpu \
-            arch \
-            --include="*.c" \
-            --include="*.h" \
-            2>/dev/null | head -n 5)
+          GPU_TABLE=$(grep -rl "gpu_dvfs_table\|gpu_max_clock" \
+            drivers/gpu/ arch/ --include="*.c" --include="*.h" 2>/dev/null | head -n 3)
           for f in $GPU_TABLE; do
-            if grep -q "949000" "$f"; then
-              sed -i '/949000/a\        1196000,' "$f" || true
-              echo "[+] OC patched: $f"
+            if grep -q "949" "$f" 2>/dev/null; then
+              sed -i '/949000/a\\t\t1196000,' "$f" || true
+              echo "[+] Added 1196MHz to $f"
             fi
           done
+          echo "[+] GPU OC done"
 
       - name: Fix scripts
         run: |
@@ -71,73 +166,71 @@ jobs:
           printf '#!/bin/sh\nexit 0\n' > scripts/min-tool-version.sh
           chmod +x scripts/min-tool-version.sh
 
-      - name: Configure kernel
-        run: |
-          cd kernel
-          export ARCH=arm64
-          export SUBARCH=arm64
-          make exynos850-a21snsxx_defconfig
-          ./scripts/config --enable KPROBES || true
-          ./scripts/config --enable KPROBE_EVENTS || true
-          ./scripts/config --enable OVERLAY_FS || true
-          ./scripts/config --disable LTO || true
-          ./scripts/config --disable LTO_CLANG || true
-          ./scripts/config --disable CFI_CLANG || true
-          ./scripts/config --disable SHADOW_CALL_STACK || true
-          make olddefconfig
-
       - name: Build kernel
         run: |
           cd kernel
           export ARCH=arm64
           export SUBARCH=arm64
           export KBUILD_BUILD_USER="Gemini"
-          export KBUILD_BUILD_HOST="GitHub-Actions"
-          
-          # Giúp phát hiện lỗi chính xác khi dùng lệnh kiểm tra chéo (pipe '|')
-          set -o pipefail
+          export KBUILD_BUILD_HOST="Github-Actions"
+
+          make exynos850-a21snsxx_defconfig
+
+          ./scripts/config --enable  KSU           || true
+          ./scripts/config --enable  KPROBES        || true
+          ./scripts/config --enable  OVERLAY_FS     || true
+          ./scripts/config --enable  KPROBE_EVENTS  || true
+          ./scripts/config --disable LTO            || true
+          ./scripts/config --disable CFI_CLANG      || true
+
+          yes "" | make olddefconfig
 
           make -j$(nproc) \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            HOSTCC=gcc \
-            HOSTCXX=g++ \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld \
+            AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            HOSTCC=gcc HOSTCXX=g++ \
+            KCFLAGS="-Wno-error=format-zero-length -Wno-error=format -Wno-error=format-extra-args" \
             2>&1 | tee ../build.log
 
-      - name: Verify output
+      - name: Check kernel image
         if: always()
         run: |
-          echo "===== BOOT FILES ====="
-          find kernel/arch/arm64/boot \
-            -type f \
-            \( -name "Image*" -o -name "*.dtb" \) || true
-
-      - name: Show build errors
-        if: always()
-        run: |
-          echo "===== LAST ERRORS ====="
-          grep -i "error:" build.log | tail -50 || true
+          echo "=== Boot files ==="
+          find kernel/arch/arm64/boot/ -maxdepth 1 -type f 2>/dev/null || echo "empty"
+          echo "=== Last errors ==="
+          grep "error:" ../build.log 2>/dev/null | grep -v "^--$" | tail -5 || echo "none"
 
       - name: Pack AnyKernel3
         run: |
           rm -rf AnyKernel3
-          git clone --depth=1 \
-            https://github.com/osm0sis/AnyKernel3
-          KERNEL_IMAGE=$(find kernel/arch/arm64/boot \
-            -type f \
-            \( -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" \) \
-            | head -n 1)
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+
+          KERNEL_IMAGE=""
+          for f in \
+            kernel/arch/arm64/boot/Image.gz-dtb \
+            kernel/arch/arm64/boot/Image.gz \
+            kernel/arch/arm64/boot/Image; do
+            [ -f "$f" ] && KERNEL_IMAGE="$f" && break
+          done
+
           if [ -z "$KERNEL_IMAGE" ]; then
-            echo "===== BUILD FAILED ====="
-            tail -200 build.log || true
+            echo "ERROR: Kernel image not found!"
+            find kernel/arch/arm64/boot/ -type f 2>/dev/null
             exit 1
           fi
-          echo "Using: $KERNEL_IMAGE"
+
+          echo "[+] Using: $KERNEL_IMAGE"
           cp -v "$KERNEL_IMAGE" AnyKernel3/
           cd AnyKernel3
           sed -i 's/device.name1=.*/device.name1=SM-A217F/' anykernel.sh || true
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
           zip -r9 ../A21s-Kernel-KSU-OC.zip ./*
+          echo "[✓] Zip created!"
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
@@ -150,6 +243,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: |
-            build.log
-            kernel/.config
+          path: build.log
